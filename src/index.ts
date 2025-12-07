@@ -5,13 +5,13 @@ const activeExtensions = new Set<string>();
 
 export function registerExtension(extensionId: string): void {
   activeExtensions.add(extensionId);
-  // Defer status bar update to avoid blocking extension host
-  setImmediate(() => updateStatusBar());
+  // Defer status bar update to next tick to avoid blocking extension host
+  setTimeout(() => updateStatusBar(), 0);
 }
 
 export function unregisterExtension(extensionId: string): void {
   activeExtensions.delete(extensionId);
-  setImmediate(() => updateStatusBar());
+  setTimeout(() => updateStatusBar(), 0);
 }
 
 function updateStatusBar(): void {

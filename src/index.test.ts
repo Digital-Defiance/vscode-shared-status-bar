@@ -12,21 +12,21 @@ describe("Shared Status Bar", () => {
 
   it("creates status bar on first registration", (done) => {
     registerExtension("test-ext");
-    setImmediate(() => {
+    setTimeout(() => {
       expect(vscode.window.createStatusBarItem).toHaveBeenCalledWith(
         "mcp-acs.shared-status",
         vscode.StatusBarAlignment.Right,
         100
       );
       done();
-    });
+    }, 10);
   });
 
   it("registers extension successfully", (done) => {
     registerExtension("test-ext");
-    setImmediate(() => {
+    setTimeout(() => {
       expect(vscode.window.createStatusBarItem).toHaveBeenCalled();
       done();
-    });
+    }, 10);
   });
 });
