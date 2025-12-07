@@ -12,7 +12,7 @@ describe("Shared Status Bar", () => {
 
   it("creates status bar on first registration", async () => {
     registerExtension("test-ext");
-    await Promise.resolve();
+    await new Promise(resolve => queueMicrotask(() => resolve(undefined)));
     expect(vscode.window.createStatusBarItem).toHaveBeenCalledWith(
       "mcp-acs.shared-status",
       vscode.StatusBarAlignment.Right,
@@ -22,7 +22,7 @@ describe("Shared Status Bar", () => {
 
   it("registers extension successfully", async () => {
     registerExtension("test-ext");
-    await Promise.resolve();
+    await new Promise(resolve => queueMicrotask(() => resolve(undefined)));
     expect(vscode.window.createStatusBarItem).toHaveBeenCalled();
   });
 });

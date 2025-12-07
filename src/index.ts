@@ -2,16 +2,25 @@ import * as vscode from "vscode";
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 const activeExtensions = new Set<string>();
+let updatePending = false;
 
 export function registerExtension(extensionId: string): void {
   activeExtensions.add(extensionId);
-  // Use Promise.resolve to defer to microtask queue, avoiding extension host blocking
-  Promise.resolve().then(() => updateStatusBar());
+  scheduleUpdate();
 }
 
 export function unregisterExtension(extensionId: string): void {
   activeExtensions.delete(extensionId);
-  Promise.resolve().then(() => updateStatusBar());
+  scheduleUpdate();
+}
+
+function scheduleUpdate(): void {
+  if (updatePending) return;
+  updatePending = true;
+  queueMicrotask(() => {
+    updatePending = false;
+    updateStatusBar();
+  });
 }
 
 function updateStatusBar(): void {
