@@ -9,14 +9,18 @@
   ],
   "scripts": {
     "build": "tsc",
+    "test": "npx jest",
     "publish:public": "npm publish --access public",
-    "prepublishOnly": "yarn build"
+    "prepublishOnly": "yarn build && yarn test"
   },
   "peerDependencies": {
     "vscode": "^1.80.0"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.0",
     "@types/vscode": "^1.80.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
     "typescript": "^5.3.3"
   },
   "repository": {
