@@ -1,12 +1,34 @@
 {
   "name": "@ai-capabilities-suite/vscode-shared-status-bar",
   "version": "1.0.0",
+  "description": "Shared status bar indicator for MCP ACS VSCode extensions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "publish:public": "npm publish --access public",
+    "prepublishOnly": "yarn build"
   },
   "peerDependencies": {
     "vscode": "^1.80.0"
-  }
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "typescript": "^5.3.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Digital-Defiance/vscode-shared-status-bar.git"
+  },
+  "keywords": [
+    "vscode",
+    "status-bar",
+    "mcp",
+    "shared"
+  ],
+  "author": "Digital Defiance",
+  "license": "MIT"
 }
