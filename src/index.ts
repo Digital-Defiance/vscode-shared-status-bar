@@ -3,22 +3,15 @@ import * as vscode from "vscode";
 let statusBarItem: vscode.StatusBarItem | undefined;
 const activeExtensions = new Set<string>();
 
-function isTestMode(): boolean {
-  return process.env["VSCODE_TEST_MODE"] === "true" || process.env["NODE_ENV"] === "test";
-}
-
 export function registerExtension(extensionId: string): void {
   activeExtensions.add(extensionId);
-  if (!isTestMode()) {
-    updateStatusBar();
-  }
+  // Defer status bar update to avoid blocking extension host
+  setImmediate(() => updateStatusBar());
 }
 
 export function unregisterExtension(extensionId: string): void {
   activeExtensions.delete(extensionId);
-  if (!isTestMode()) {
-    updateStatusBar();
-  }
+  setImmediate(() => updateStatusBar());
 }
 
 function updateStatusBar(): void {
