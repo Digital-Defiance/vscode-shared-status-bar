@@ -5,13 +5,13 @@ const activeExtensions = new Set<string>();
 
 export function registerExtension(extensionId: string): void {
   activeExtensions.add(extensionId);
-  // Defer status bar update to next tick to avoid blocking extension host
-  setTimeout(() => updateStatusBar(), 0);
+  // Use Promise.resolve to defer to microtask queue, avoiding extension host blocking
+  Promise.resolve().then(() => updateStatusBar());
 }
 
 export function unregisterExtension(extensionId: string): void {
   activeExtensions.delete(extensionId);
-  setTimeout(() => updateStatusBar(), 0);
+  Promise.resolve().then(() => updateStatusBar());
 }
 
 function updateStatusBar(): void {
