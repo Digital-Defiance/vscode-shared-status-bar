@@ -16,8 +16,8 @@ describe("Shared Status Bar", () => {
     dispose();
   });
 
-  it("creates status bar on first registration", () => {
-    registerExtension("test-ext");
+  it("creates status bar on first registration", async () => {
+    await registerExtension("test-ext");
     expect(vscode.window.createStatusBarItem).toHaveBeenCalledWith(
       "mcp-acs.shared-status",
       vscode.StatusBarAlignment.Right,
@@ -25,59 +25,59 @@ describe("Shared Status Bar", () => {
     );
   });
 
-  it("registers extension successfully", () => {
-    registerExtension("test-ext");
+  it("registers extension successfully", async () => {
+    await registerExtension("test-ext");
     expect(vscode.window.createStatusBarItem).toHaveBeenCalled();
   });
 
-  it("getStatusBarItem returns the status bar", () => {
-    registerExtension("test-ext");
+  it("getStatusBarItem returns the status bar", async () => {
+    await registerExtension("test-ext");
     expect(getStatusBarItem()).toBeDefined();
   });
 
-  it("getActiveExtensionCount returns correct count", () => {
-    registerExtension("test-ext-1");
-    registerExtension("test-ext-2");
+  it("getActiveExtensionCount returns correct count", async () => {
+    await registerExtension("test-ext-1");
+    await registerExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(2);
   });
 
-  it("unregistering non-existent extension does not affect count", () => {
-    registerExtension("test-ext-1");
-    registerExtension("test-ext-2");
+  it("unregistering non-existent extension does not affect count", async () => {
+    await registerExtension("test-ext-1");
+    await registerExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(2);
 
     // Unregister an extension that was never registered
-    unregisterExtension("non-existent-ext");
+    await unregisterExtension("non-existent-ext");
 
     // Count should remain unchanged
     expect(getActiveExtensionCount()).toBe(2);
   });
 
-  it("unregistering existing extension decreases count", () => {
-    registerExtension("test-ext-1");
-    registerExtension("test-ext-2");
+  it("unregistering existing extension decreases count", async () => {
+    await registerExtension("test-ext-1");
+    await registerExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(2);
 
-    unregisterExtension("test-ext-1");
+    await unregisterExtension("test-ext-1");
     expect(getActiveExtensionCount()).toBe(1);
 
-    unregisterExtension("test-ext-2");
+    await unregisterExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(0);
   });
 
-  it("status bar is hidden when all extensions unregistered", () => {
-    registerExtension("test-ext-1");
+  it("status bar is hidden when all extensions unregistered", async () => {
+    await registerExtension("test-ext-1");
     const statusBar = getStatusBarItem();
     expect(statusBar).toBeDefined();
 
-    unregisterExtension("test-ext-1");
+    await unregisterExtension("test-ext-1");
 
     // Status bar should be hidden
     expect(statusBar?.hide).toHaveBeenCalled();
   });
 
-  it("status bar command is set after command registration", () => {
-    registerExtension("test-ext-1");
+  it("status bar command is set after command registration", async () => {
+    await registerExtension("test-ext-1");
     const statusBar = getStatusBarItem();
 
     // Status bar should exist
@@ -93,12 +93,12 @@ describe("Shared Status Bar", () => {
     expect(statusBar?.command).toBe("mcp-acs.showMenu");
   });
 
-  it("status bar works correctly in test environment", () => {
+  it("status bar works correctly in test environment", async () => {
     // This test verifies Requirement 4.1 and 4.2
     // The status bar should function identically in test mode
 
     // Register first extension
-    registerExtension("test-ext-1");
+    await registerExtension("test-ext-1");
 
     // Status bar should be created and shown (Requirement 4.2)
     expect(vscode.window.createStatusBarItem).toHaveBeenCalled();
@@ -107,21 +107,21 @@ describe("Shared Status Bar", () => {
     expect(statusBar?.show).toHaveBeenCalled();
 
     // Register second extension
-    registerExtension("test-ext-2");
+    await registerExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(2);
 
     // Unregister extensions
-    unregisterExtension("test-ext-1");
+    await unregisterExtension("test-ext-1");
     expect(getActiveExtensionCount()).toBe(1);
 
-    unregisterExtension("test-ext-2");
+    await unregisterExtension("test-ext-2");
     expect(getActiveExtensionCount()).toBe(0);
 
     // Status bar should be hidden
     expect(statusBar?.hide).toHaveBeenCalled();
   });
 
-  it("sequential tests start with clean state", () => {
+  it("sequential tests start with clean state", async () => {
     // This test verifies Requirement 4.4
     // Each test should start with a clean state
 
@@ -130,7 +130,7 @@ describe("Shared Status Bar", () => {
     expect(getStatusBarItem()).toBeUndefined();
 
     // Register an extension
-    registerExtension("test-ext");
+    await registerExtension("test-ext");
     expect(getActiveExtensionCount()).toBe(1);
 
     // The afterEach will clean this up for the next test
@@ -147,7 +147,7 @@ describe("Shared Status Bar", () => {
       consoleErrorSpy.mockRestore();
     });
 
-    it("handles command registration failure gracefully", () => {
+    it("handles command registration failure gracefully", async () => {
       // Mock registerCommand to throw an error
       const originalRegisterCommand = vscode.commands.registerCommand;
       (vscode.commands.registerCommand as any) = jest.fn(() => {
@@ -155,7 +155,7 @@ describe("Shared Status Bar", () => {
       });
 
       // Should not throw, extension should continue loading
-      expect(() => registerExtension("test-ext")).not.toThrow();
+      await expect(registerExtension("test-ext")).resolves.not.toThrow();
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -173,7 +173,7 @@ describe("Shared Status Bar", () => {
       vscode.commands.registerCommand = originalRegisterCommand;
     });
 
-    it("handles status bar creation failure gracefully", () => {
+    it("handles status bar creation failure gracefully", async () => {
       // Mock createStatusBarItem to throw an error
       const originalCreateStatusBarItem = vscode.window.createStatusBarItem;
       (vscode.window.createStatusBarItem as any) = jest.fn(() => {
@@ -181,7 +181,7 @@ describe("Shared Status Bar", () => {
       });
 
       // Should not throw, extension should continue loading
-      expect(() => registerExtension("test-ext")).not.toThrow();
+      await expect(registerExtension("test-ext")).resolves.not.toThrow();
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -206,7 +206,7 @@ describe("Shared Status Bar", () => {
         throw new Error("Quick pick failed");
       });
 
-      registerExtension("test-ext");
+      await registerExtension("test-ext");
 
       // Get the command callback
       const registerCommandCalls = (
@@ -232,8 +232,8 @@ describe("Shared Status Bar", () => {
       vscode.window.showQuickPick = originalShowQuickPick;
     });
 
-    it("handles command disposal errors gracefully", () => {
-      registerExtension("test-ext");
+    it("handles command disposal errors gracefully", async () => {
+      await registerExtension("test-ext");
 
       // Mock the command disposable to throw on dispose
       const commandDisposableMock = (
@@ -244,7 +244,7 @@ describe("Shared Status Bar", () => {
       });
 
       // Should not throw when unregistering
-      expect(() => unregisterExtension("test-ext")).not.toThrow();
+      await expect(unregisterExtension("test-ext")).resolves.not.toThrow();
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -256,8 +256,8 @@ describe("Shared Status Bar", () => {
       expect(getActiveExtensionCount()).toBe(0);
     });
 
-    it("handles status bar disposal errors gracefully", () => {
-      registerExtension("test-ext");
+    it("handles status bar disposal errors gracefully", async () => {
+      await registerExtension("test-ext");
       const statusBar = getStatusBarItem();
 
       // Mock status bar dispose to throw an error
@@ -280,8 +280,8 @@ describe("Shared Status Bar", () => {
       expect(getActiveExtensionCount()).toBe(0);
     });
 
-    it("handles multiple disposal errors gracefully", () => {
-      registerExtension("test-ext");
+    it("handles multiple disposal errors gracefully", async () => {
+      await registerExtension("test-ext");
       const statusBar = getStatusBarItem();
 
       // Mock both command and status bar dispose to throw errors
@@ -315,7 +315,7 @@ describe("Shared Status Bar", () => {
       expect(getActiveExtensionCount()).toBe(0);
     });
 
-    it("continues operation after command registration failure", () => {
+    it("continues operation after command registration failure", async () => {
       // Mock registerCommand to throw an error
       const originalRegisterCommand = vscode.commands.registerCommand;
       (vscode.commands.registerCommand as any) = jest.fn(() => {
@@ -323,14 +323,14 @@ describe("Shared Status Bar", () => {
       });
 
       // Register first extension (command registration will fail)
-      registerExtension("test-ext-1");
+      await registerExtension("test-ext-1");
       expect(getActiveExtensionCount()).toBe(1);
 
       // Restore the mock
       vscode.commands.registerCommand = originalRegisterCommand;
 
       // Register second extension (should work normally)
-      registerExtension("test-ext-2");
+      await registerExtension("test-ext-2");
       expect(getActiveExtensionCount()).toBe(2);
 
       // Status bar should still be functional
@@ -339,7 +339,7 @@ describe("Shared Status Bar", () => {
       expect(statusBar?.text).toBe("$(layers) ACS");
     });
 
-    it("handles diagnostic command registration failure gracefully", () => {
+    it("handles diagnostic command registration failure gracefully", async () => {
       // Mock registerCommand to throw an error
       const originalRegisterCommand = vscode.commands.registerCommand;
       let callCount = 0;
@@ -371,15 +371,15 @@ describe("Shared Status Bar", () => {
       );
 
       // Extension should still be able to register normally
-      registerExtension("test-ext");
+      await registerExtension("test-ext");
       expect(getActiveExtensionCount()).toBe(1);
 
       // Restore original mock
       vscode.commands.registerCommand = originalRegisterCommand;
     });
 
-    it("handles status bar show() failure gracefully", () => {
-      registerExtension("test-ext");
+    it("handles status bar show() failure gracefully", async () => {
+      await registerExtension("test-ext");
       const statusBar = getStatusBarItem();
 
       // Mock show to throw an error
@@ -390,7 +390,7 @@ describe("Shared Status Bar", () => {
       }
 
       // Register another extension (will try to show status bar)
-      expect(() => registerExtension("test-ext-2")).not.toThrow();
+      await expect(registerExtension("test-ext-2")).resolves.not.toThrow();
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -402,8 +402,8 @@ describe("Shared Status Bar", () => {
       expect(getActiveExtensionCount()).toBe(2);
     });
 
-    it("handles status bar hide() failure gracefully", () => {
-      registerExtension("test-ext");
+    it("handles status bar hide() failure gracefully", async () => {
+      await registerExtension("test-ext");
       const statusBar = getStatusBarItem();
 
       // Mock hide to throw an error
@@ -414,7 +414,7 @@ describe("Shared Status Bar", () => {
       }
 
       // Unregister extension (will try to hide status bar)
-      expect(() => unregisterExtension("test-ext")).not.toThrow();
+      await expect(unregisterExtension("test-ext")).resolves.not.toThrow();
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -434,7 +434,7 @@ describe("Shared Status Bar", () => {
         throw new Error("Show information message failed");
       });
 
-      registerExtension("test-ext");
+      await registerExtension("test-ext");
 
       // Get the diagnostic command callback
       const registerCommandCalls = (
@@ -466,7 +466,7 @@ describe("Shared Status Bar", () => {
       vscode.window.showInformationMessage = originalShowInformationMessage;
     });
 
-    it("handles diagnostic command disposal errors gracefully", () => {
+    it("handles diagnostic command disposal errors gracefully", async () => {
       // Create mock output channel to trigger diagnostic command registration
       const mockChannel = {
         appendLine: jest.fn(),
@@ -475,7 +475,7 @@ describe("Shared Status Bar", () => {
       };
       (require("./index") as any).setOutputChannel(mockChannel);
 
-      registerExtension("test-ext");
+      await registerExtension("test-ext");
 
       // Mock the diagnostic command disposable to throw on dispose
       const registerCommandCalls = (
@@ -513,7 +513,7 @@ describe("Shared Status Bar", () => {
       expect(getActiveExtensionCount()).toBe(0);
     });
 
-    it("verifies extension continues operating after all error types", () => {
+    it("verifies extension continues operating after all error types", async () => {
       // This test verifies that after various errors, the extension remains functional
 
       // 1. Simulate status bar creation failure
@@ -522,14 +522,14 @@ describe("Shared Status Bar", () => {
         throw new Error("Creation failed");
       });
 
-      registerExtension("test-ext-1");
+      await registerExtension("test-ext-1");
       expect(getActiveExtensionCount()).toBe(1);
 
       // Restore
       vscode.window.createStatusBarItem = originalCreateStatusBarItem;
 
       // 2. Register another extension - should work now
-      registerExtension("test-ext-2");
+      await registerExtension("test-ext-2");
       expect(getActiveExtensionCount()).toBe(2);
       expect(getStatusBarItem()).toBeDefined();
 
@@ -542,7 +542,7 @@ describe("Shared Status Bar", () => {
         });
 
         // Register another extension
-        registerExtension("test-ext-3");
+        await registerExtension("test-ext-3");
         expect(getActiveExtensionCount()).toBe(3);
 
         // Restore
@@ -555,9 +555,9 @@ describe("Shared Status Bar", () => {
       expect(getStatusBarItem()?.tooltip).toBe("ACS Extensions (3 active)");
 
       // 5. Unregister all extensions
-      unregisterExtension("test-ext-1");
-      unregisterExtension("test-ext-2");
-      unregisterExtension("test-ext-3");
+      await unregisterExtension("test-ext-1");
+      await unregisterExtension("test-ext-2");
+      await unregisterExtension("test-ext-3");
       expect(getActiveExtensionCount()).toBe(0);
     });
   });

@@ -43,6 +43,12 @@ let commandDisposable: vscode.Disposable | undefined;
 let registerCommandDisposable: vscode.Disposable | undefined;
 
 /**
+ * Disposable for the unregister extension command.
+ * Created when this extension becomes the owner of the status bar.
+ */
+let unregisterCommandDisposable: vscode.Disposable | undefined;
+
+/**
  * Disposable for the diagnostic command.
  * Created when output channel is set, disposed during cleanup.
  */
@@ -223,6 +229,25 @@ export async function registerExtension(extensionId: string): Promise<void> {
       }
     }
   }
+
+  // Register the unregistration command so others can unregister with us
+  if (!unregisterCommandDisposable) {
+    try {
+      unregisterCommandDisposable = vscode.commands.registerCommand(
+        "mcp-acs.unregisterExtension",
+        (id: string) => {
+          log(`Received unregistration request from: ${id}`);
+          internalUnregister(id);
+        }
+      );
+      log("Command registered: mcp-acs.unregisterExtension");
+    } catch (error) {
+      logError(
+        "Failed to register mcp-acs.unregisterExtension command:",
+        error
+      );
+    }
+  }
 }
 
 function internalRegister(extensionId: string): void {
@@ -288,7 +313,20 @@ function internalRegister(extensionId: string): void {
  * }
  * ```
  */
-export function unregisterExtension(extensionId: string): void {
+export async function unregisterExtension(extensionId: string): Promise<void> {
+  try {
+    await vscode.commands.executeCommand(
+      "mcp-acs.unregisterExtension",
+      extensionId
+    );
+    log(`Unregistered ${extensionId} via owner`);
+  } catch (error) {
+    // If command fails (e.g. we are owner, or owner died), try local unregister
+    internalUnregister(extensionId);
+  }
+}
+
+function internalUnregister(extensionId: string): void {
   // Defensive check: only proceed if the extension was actually registered
   const wasRegistered = activeExtensions.has(extensionId);
   if (!wasRegistered) {
@@ -322,6 +360,17 @@ export function unregisterExtension(extensionId: string): void {
       log("Command disposed: mcp-acs.registerExtension");
     } catch (error) {
       logError("Failed to dispose mcp-acs.registerExtension command:", error);
+    }
+  }
+
+  // Dispose unregister command when last extension unregisters
+  if (activeExtensions.size === 0 && unregisterCommandDisposable) {
+    try {
+      unregisterCommandDisposable.dispose();
+      unregisterCommandDisposable = undefined;
+      log("Command disposed: mcp-acs.unregisterExtension");
+    } catch (error) {
+      logError("Failed to dispose mcp-acs.unregisterExtension command:", error);
     }
   }
 
