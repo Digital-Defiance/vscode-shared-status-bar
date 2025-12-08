@@ -37,6 +37,12 @@ const activeExtensions = new Set<string>();
 let commandDisposable: vscode.Disposable | undefined;
 
 /**
+ * Disposable for the register extension command.
+ * Created when this extension becomes the owner of the status bar.
+ */
+let registerCommandDisposable: vscode.Disposable | undefined;
+
+/**
  * Disposable for the diagnostic command.
  * Created when output channel is set, disposed during cleanup.
  */
@@ -108,6 +114,9 @@ function logError(message: string, error: unknown): void {
  * in addition to the console. This also registers the diagnostic command
  * (mcp-acs.diagnostics) for troubleshooting.
  *
+ * This function is idempotent - calling it multiple times will only use
+ * the first output channel provided.
+ *
  * @param channel - VSCode output channel to use for logging
  *
  * @example
@@ -117,6 +126,12 @@ function logError(message: string, error: unknown): void {
  * ```
  */
 export function setOutputChannel(channel: vscode.OutputChannel): void {
+  // Only set output channel once (first extension wins)
+  if (outputChannel) {
+    log("Output channel already configured, ignoring duplicate call");
+    return;
+  }
+
   outputChannel = channel;
   log("Output channel configured for shared status bar");
 
@@ -153,15 +168,64 @@ export function setOutputChannel(channel: vscode.OutputChannel): void {
  *
  * @example
  * ```typescript
- * export function activate(context: vscode.ExtensionContext) {
- *   registerExtension("my-extension-id");
+ * export async function activate(context: vscode.ExtensionContext) {
+ *   await registerExtension("my-extension-id");
  *   context.subscriptions.push({
  *     dispose: () => unregisterExtension("my-extension-id")
  *   });
  * }
  * ```
  */
-export function registerExtension(extensionId: string): void {
+export async function registerExtension(extensionId: string): Promise<void> {
+  // Try to register with an existing owner first
+  try {
+    // Attempt to execute the registration command provided by the owner
+    // If this succeeds, another extension is already managing the status bar
+    await vscode.commands.executeCommand(
+      "mcp-acs.registerExtension",
+      extensionId
+    );
+    log(`Registered ${extensionId} with existing status bar owner`);
+    return;
+  } catch (error) {
+    // Command not found or failed - we will become the owner
+    log(
+      `No existing status bar owner found (or command failed), becoming owner for ${extensionId}`
+    );
+  }
+
+  // We are the owner (or the first one)
+  internalRegister(extensionId);
+
+  // Register the registration command so others can register with us
+  if (!registerCommandDisposable) {
+    try {
+      registerCommandDisposable = vscode.commands.registerCommand(
+        "mcp-acs.registerExtension",
+        (id: string) => {
+          log(`Received registration request from: ${id}`);
+          internalRegister(id);
+        }
+      );
+      log("Command registered: mcp-acs.registerExtension");
+    } catch (error) {
+      logError("Failed to register mcp-acs.registerExtension command:", error);
+      // If we failed to register, maybe someone else just did?
+      // Try to register with them again?
+      try {
+        await vscode.commands.executeCommand(
+          "mcp-acs.registerExtension",
+          extensionId
+        );
+        return;
+      } catch (e) {
+        // Ignore
+      }
+    }
+  }
+}
+
+function internalRegister(extensionId: string): void {
   const wasEmpty = activeExtensions.size === 0;
   const previousSize = activeExtensions.size;
 
@@ -250,6 +314,17 @@ export function unregisterExtension(extensionId: string): void {
     }
   }
 
+  // Dispose register command when last extension unregisters
+  if (activeExtensions.size === 0 && registerCommandDisposable) {
+    try {
+      registerCommandDisposable.dispose();
+      registerCommandDisposable = undefined;
+      log("Command disposed: mcp-acs.registerExtension");
+    } catch (error) {
+      logError("Failed to dispose mcp-acs.registerExtension command:", error);
+    }
+  }
+
   // Update status bar visibility based on new count
   updateStatusBar();
 }
@@ -291,6 +366,7 @@ function formatDiagnosticOutput(info: DiagnosticInfo): string {
     `Status Bar Exists: ${info.statusBarExists}`,
     `Status Bar Visible: ${info.statusBarVisible}`,
     `Command Registered: ${info.commandRegistered}`,
+    `Register Command Registered: ${info.registerCommandRegistered}`,
     "",
     "Registered Extensions:",
   ];
@@ -506,6 +582,7 @@ export function dispose(): void {
   log(
     `Shared status bar disposed successfully (cleared ${extensionCount} extension(s))`
   );
+  outputChannel = undefined;
 }
 
 /**
@@ -564,6 +641,9 @@ export interface DiagnosticInfo {
   /** Whether the show menu command is registered */
   commandRegistered: boolean;
 
+  /** Whether the register extension command is registered */
+  registerCommandRegistered: boolean;
+
   /** Last error that occurred, if any */
   lastError: string | null;
 }
@@ -592,6 +672,7 @@ export function getDiagnosticInfo(): DiagnosticInfo {
     statusBarExists: statusBarItem !== undefined,
     statusBarVisible: statusBarItem !== undefined && activeExtensions.size > 0,
     commandRegistered: commandDisposable !== undefined,
+    registerCommandRegistered: registerCommandDisposable !== undefined,
     lastError: lastError,
   };
 }
