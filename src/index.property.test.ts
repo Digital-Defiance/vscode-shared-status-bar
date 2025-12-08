@@ -217,8 +217,11 @@ describe("Property-Based Tests", () => {
           // Get the command handler that was registered
           const registerCommandMock = vscode.commands
             .registerCommand as jest.Mock;
-          if (registerCommandMock.mock.calls.length > 0) {
-            const commandHandler = registerCommandMock.mock.calls[0][1];
+          const call = registerCommandMock.mock.calls.find(
+            (c: any) => c[0] === "mcp-acs.showMenu"
+          );
+          if (call) {
+            const commandHandler = call[1];
 
             // Execute the command - should not throw
             await expect(commandHandler()).resolves.not.toThrow();
@@ -398,8 +401,11 @@ describe("Property-Based Tests", () => {
           // Get the command handler that was registered
           const registerCommandMock = vscode.commands
             .registerCommand as jest.Mock;
-          if (registerCommandMock.mock.calls.length > 0) {
-            const commandHandler = registerCommandMock.mock.calls[0][1];
+          const call = registerCommandMock.mock.calls.find(
+            (c: any) => c[0] === "mcp-acs.showMenu"
+          );
+          if (call) {
+            const commandHandler = call[1];
 
             // Execute the command
             await commandHandler();
@@ -981,8 +987,11 @@ describe("Property-Based Tests", () => {
           // Get the command handler that was registered
           const registerCommandMock = vscode.commands
             .registerCommand as jest.Mock;
-          if (registerCommandMock.mock.calls.length > 0) {
-            const commandHandler = registerCommandMock.mock.calls[0][1];
+          const call = registerCommandMock.mock.calls.find(
+            (c: any) => c[0] === "mcp-acs.showMenu"
+          );
+          if (call) {
+            const commandHandler = call[1];
 
             // Execute the command
             await commandHandler();

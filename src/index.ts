@@ -141,17 +141,28 @@ export function setOutputChannel(channel: vscode.OutputChannel): void {
   outputChannel = channel;
   log("Output channel configured for shared status bar");
 
-  // Register diagnostic command when output channel is set
-  if (!diagnosticCommandDisposable) {
-    try {
-      diagnosticCommandDisposable = vscode.commands.registerCommand(
-        "mcp-acs.diagnostics",
-        showDiagnostics
-      );
-      log("Diagnostic command registered: mcp-acs.diagnostics");
-    } catch (error) {
-      logError("Failed to register mcp-acs.diagnostics command:", error);
-    }
+  // Only register diagnostic command if we are the owner (have registered the registration command)
+  if (registerCommandDisposable) {
+    registerDiagnosticCommand();
+  }
+}
+
+/**
+ * Registers the diagnostic command if not already registered.
+ * This should only be called by the status bar owner.
+ */
+function registerDiagnosticCommand(): void {
+  if (diagnosticCommandDisposable) {
+    return;
+  }
+  try {
+    diagnosticCommandDisposable = vscode.commands.registerCommand(
+      "mcp-acs.diagnostics",
+      showDiagnostics
+    );
+    log("Diagnostic command registered: mcp-acs.diagnostics");
+  } catch (error) {
+    logError("Failed to register mcp-acs.diagnostics command:", error);
   }
 }
 
@@ -194,16 +205,14 @@ export async function registerExtension(extensionId: string): Promise<void> {
     log(`Registered ${extensionId} with existing status bar owner`);
     return;
   } catch (error) {
-    // Command not found or failed - we will become the owner
+    // Command not found or failed - we will attempt to become the owner
     log(
-      `No existing status bar owner found (or command failed), becoming owner for ${extensionId}`
+      `No existing status bar owner found (or command failed), attempting to become owner for ${extensionId}`
     );
   }
 
   // We are the owner (or the first one)
-  internalRegister(extensionId);
-
-  // Register the registration command so others can register with us
+  // Try to acquire the lock by registering the registration command
   if (!registerCommandDisposable) {
     try {
       registerCommandDisposable = vscode.commands.registerCommand(
@@ -214,6 +223,29 @@ export async function registerExtension(extensionId: string): Promise<void> {
         }
       );
       log("Command registered: mcp-acs.registerExtension");
+
+      // We successfully registered the command, so we are the owner.
+      // Now we can register ourselves.
+      internalRegister(extensionId);
+
+      // Register the unregistration command so others can unregister with us
+      if (!unregisterCommandDisposable) {
+        try {
+          unregisterCommandDisposable = vscode.commands.registerCommand(
+            "mcp-acs.unregisterExtension",
+            (id: string) => {
+              log(`Received unregistration request from: ${id}`);
+              internalUnregister(id);
+            }
+          );
+          log("Command registered: mcp-acs.unregisterExtension");
+        } catch (error) {
+          logError(
+            "Failed to register mcp-acs.unregisterExtension command:",
+            error
+          );
+        }
+      }
     } catch (error) {
       logError("Failed to register mcp-acs.registerExtension command:", error);
       // If we failed to register, maybe someone else just did?
@@ -223,30 +255,15 @@ export async function registerExtension(extensionId: string): Promise<void> {
           "mcp-acs.registerExtension",
           extensionId
         );
+        log(`Registered ${extensionId} with new status bar owner`);
         return;
       } catch (e) {
-        // Ignore
+        logError("Failed to register with new owner after losing race:", e);
       }
     }
-  }
-
-  // Register the unregistration command so others can unregister with us
-  if (!unregisterCommandDisposable) {
-    try {
-      unregisterCommandDisposable = vscode.commands.registerCommand(
-        "mcp-acs.unregisterExtension",
-        (id: string) => {
-          log(`Received unregistration request from: ${id}`);
-          internalUnregister(id);
-        }
-      );
-      log("Command registered: mcp-acs.unregisterExtension");
-    } catch (error) {
-      logError(
-        "Failed to register mcp-acs.unregisterExtension command:",
-        error
-      );
-    }
+  } else {
+    // We are already the owner
+    internalRegister(extensionId);
   }
 }
 
@@ -269,6 +286,11 @@ function internalRegister(extensionId: string): void {
     log(
       `Extension already registered: ${extensionId} (duplicate registration ignored)`
     );
+  }
+
+  // Register diagnostic command if output channel is set and we are owner
+  if (outputChannel) {
+    registerDiagnosticCommand();
   }
 
   // Register command when first extension registers
