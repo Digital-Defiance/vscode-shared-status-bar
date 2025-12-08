@@ -1,6 +1,6 @@
 {
   "name": "@ai-capabilities-suite/vscode-shared-status-bar",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Shared status bar indicator for MCP ACS VSCode extensions",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -19,6 +19,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/vscode": "^1.80.0",
+    "fast-check": "^4.4.0",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.0",
     "typescript": "^5.3.3"

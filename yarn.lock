@@ -11,6 +11,7 @@ __metadata:
   dependencies:
     "@types/jest": "npm:^29.5.0"
     "@types/vscode": "npm:^1.80.0"
+    fast-check: "npm:^4.4.0"
     jest: "npm:^29.7.0"
     ts-jest: "npm:^29.1.0"
     typescript: "npm:^5.3.3"
@@ -1438,6 +1439,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fast-check@npm:^4.4.0":
+  version: 4.4.0
+  resolution: "fast-check@npm:4.4.0"
+  dependencies:
+    pure-rand: "npm:^7.0.0"
+  checksum: 10c0/8bd1a0c772cde26901f165356f91def147da6eee5c27b392944392ad0cf2412b0aac7dd1614cdc6c6bb58bb5bfed20eb9c3997a8c042162e3f090f6198964974
+  languageName: node
+  linkType: hard
+
 "fast-json-stable-stringify@npm:2.x, fast-json-stable-stringify@npm:^2.1.0":
   version: 2.1.0
   resolution: "fast-json-stable-stringify@npm:2.1.0"
@@ -2819,6 +2829,13 @@ __metadata:
   version: 6.1.0
   resolution: "pure-rand@npm:6.1.0"
   checksum: 10c0/1abe217897bf74dcb3a0c9aba3555fe975023147b48db540aa2faf507aee91c03bf54f6aef0eb2bf59cc259a16d06b28eca37f0dc426d94f4692aeff02fb0e65
+  languageName: node
+  linkType: hard
+
+"pure-rand@npm:^7.0.0":
+  version: 7.0.1
+  resolution: "pure-rand@npm:7.0.1"
+  checksum: 10c0/9cade41030f5ec95f5d55a11a71404cd6f46b69becaad892097cd7f58e2c6248cd0a933349ca7d21336ab629f1da42ffe899699b671bc4651600eaf6e57f837e
   languageName: node
   linkType: hard
 

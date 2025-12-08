@@ -7,6 +7,14 @@ export const window = {
     hide: jest.fn(),
     dispose: jest.fn(),
   })),
+  showQuickPick: jest.fn(() => Promise.resolve(undefined)),
+  showErrorMessage: jest.fn(() => Promise.resolve(undefined)),
+};
+
+export const commands = {
+  registerCommand: jest.fn((command: string, callback: () => void) => ({
+    dispose: jest.fn(),
+  })),
 };
 
 export const StatusBarAlignment = {
