@@ -420,7 +420,9 @@ describe("Property-Based Tests", () => {
 
             // Filter out separator and diagnostics
             const extensionItems = items.filter(
-              (item) => item.description === "Open Settings"
+              (item) =>
+                item.label !== "Show Diagnostics" &&
+                item.kind !== vscode.QuickPickItemKind.Separator
             );
 
             // Verify all registered extensions are in the menu
@@ -1014,7 +1016,9 @@ describe("Property-Based Tests", () => {
 
             // Filter out separator and diagnostics
             const extensionItems = items.filter(
-              (item) => item.description === "Open Settings"
+              (item) =>
+                item.label !== "Show Diagnostics" &&
+                item.kind !== vscode.QuickPickItemKind.Separator
             );
 
             // Verify all registered extensions are in the menu
@@ -2055,8 +2059,10 @@ describe("Property-Based Tests", () => {
 
           // Filter out separator and diagnostics
           const extensionItems = items.filter(
-            (item) => item.description === "Open Settings"
-          );
+              (item) =>
+                item.label !== "Show Diagnostics" &&
+                item.kind !== vscode.QuickPickItemKind.Separator
+            );
 
           // Property: Menu shows ALL registered extensions
           expect(extensionItems).toHaveLength(uniqueExtensions.length);

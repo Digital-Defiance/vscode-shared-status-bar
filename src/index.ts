@@ -24,11 +24,28 @@ import * as vscode from "vscode";
 let statusBarItem: vscode.StatusBarItem | undefined;
 
 /**
- * Set of active extension IDs.
- * Using a Set ensures automatic deduplication of extension IDs,
+ * Metadata for a registered extension.
+ */
+export interface ExtensionAction {
+  label: string;
+  command: string;
+  description?: string;
+  arguments?: any[];
+}
+
+export interface ExtensionMetadata {
+  displayName?: string;
+  status?: "ok" | "warning" | "error";
+  actions?: ExtensionAction[];
+  settingsQuery?: string;
+}
+
+/**
+ * Map of active extension IDs to their metadata.
+ * Using a Map ensures automatic deduplication of extension IDs,
  * making registration operations naturally idempotent.
  */
-const activeExtensions = new Set<string>();
+const activeExtensions = new Map<string, ExtensionMetadata>();
 
 /**
  * Disposable for the show menu command.
@@ -193,14 +210,18 @@ function registerDiagnosticCommand(): void {
  * }
  * ```
  */
-export async function registerExtension(extensionId: string): Promise<void> {
+export async function registerExtension(
+  extensionId: string,
+  metadata?: ExtensionMetadata
+): Promise<void> {
   // Try to register with an existing owner first
   try {
     // Attempt to execute the registration command provided by the owner
     // If this succeeds, another extension is already managing the status bar
     await vscode.commands.executeCommand(
       "mcp-acs.registerExtension",
-      extensionId
+      extensionId,
+      metadata
     );
     log(`Registered ${extensionId} with existing status bar owner`);
     return;
@@ -217,16 +238,16 @@ export async function registerExtension(extensionId: string): Promise<void> {
     try {
       registerCommandDisposable = vscode.commands.registerCommand(
         "mcp-acs.registerExtension",
-        (id: string) => {
+        (id: string, meta?: ExtensionMetadata) => {
           log(`Received registration request from: ${id}`);
-          internalRegister(id);
+          internalRegister(id, meta);
         }
       );
       log("Command registered: mcp-acs.registerExtension");
 
       // We successfully registered the command, so we are the owner.
       // Now we can register ourselves.
-      internalRegister(extensionId);
+      internalRegister(extensionId, metadata);
 
       // Register the unregistration command so others can unregister with us
       if (!unregisterCommandDisposable) {
@@ -253,7 +274,8 @@ export async function registerExtension(extensionId: string): Promise<void> {
       try {
         await vscode.commands.executeCommand(
           "mcp-acs.registerExtension",
-          extensionId
+          extensionId,
+          metadata
         );
         log(`Registered ${extensionId} with new status bar owner`);
         return;
@@ -263,16 +285,19 @@ export async function registerExtension(extensionId: string): Promise<void> {
     }
   } else {
     // We are already the owner
-    internalRegister(extensionId);
+    internalRegister(extensionId, metadata);
   }
 }
 
-function internalRegister(extensionId: string): void {
+function internalRegister(
+  extensionId: string,
+  metadata?: ExtensionMetadata
+): void {
   const wasEmpty = activeExtensions.size === 0;
   const previousSize = activeExtensions.size;
 
-  // Add to Set - automatically handles deduplication (idempotent operation)
-  activeExtensions.add(extensionId);
+  // Add to Map - automatically handles deduplication (idempotent operation)
+  activeExtensions.set(extensionId, metadata || {});
 
   // Check if this was a new registration or a duplicate
   const countChanged = activeExtensions.size !== previousSize;
@@ -411,16 +436,29 @@ function internalUnregister(extensionId: string): void {
 async function showMenuCommand(): Promise<void> {
   try {
     log(`Showing menu with ${activeExtensions.size} extensions`);
-    const extensionIds = Array.from(activeExtensions);
 
-    const items: vscode.QuickPickItem[] = [
-      ...extensionIds.map((id) => ({
-        label: id,
-        description: "Open Settings",
-      })),
-      { label: "", kind: vscode.QuickPickItemKind.Separator },
-      { label: "Show Diagnostics", description: "Troubleshooting info" },
-    ];
+    const items: vscode.QuickPickItem[] = [];
+
+    for (const [id, meta] of activeExtensions) {
+      const label = meta.displayName || id;
+      const icon =
+        meta.status === "error"
+          ? "$(error) "
+          : meta.status === "warning"
+          ? "$(warning) "
+          : "";
+      items.push({
+        label: `${icon}${label}`,
+        description: id,
+        detail: meta.status ? `Status: ${meta.status}` : undefined,
+      });
+    }
+
+    items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+    items.push({
+      label: "Show Diagnostics",
+      description: "Troubleshooting info",
+    });
 
     const selected = await vscode.window.showQuickPick(items, {
       placeHolder: "Active ACS Extensions",
@@ -431,11 +469,52 @@ async function showMenuCommand(): Promise<void> {
       if (selected.label === "Show Diagnostics") {
         showDiagnostics();
       } else {
-        // Open settings filtered by the extension ID
-        await vscode.commands.executeCommand(
-          "workbench.action.openSettings",
-          selected.label
-        );
+        const selectedId = selected.description;
+        if (selectedId) {
+          const meta = activeExtensions.get(selectedId);
+          const actions = meta?.actions || [];
+
+          const actionItems: vscode.QuickPickItem[] = [
+            ...actions.map((a) => ({
+              label: a.label,
+              description: a.description,
+              detail: a.command, // Store command in detail
+            })),
+            {
+              label: "Open Settings",
+              description: "Configure extension settings",
+              detail: "workbench.action.openSettings",
+            },
+          ];
+
+          const selectedAction = await vscode.window.showQuickPick(
+            actionItems,
+            {
+              placeHolder: `Actions for ${meta?.displayName || selectedId}`,
+              canPickMany: false,
+            }
+          );
+
+          if (selectedAction && selectedAction.detail) {
+            if (selectedAction.detail === "workbench.action.openSettings") {
+              await vscode.commands.executeCommand(
+                "workbench.action.openSettings",
+                meta?.settingsQuery || selectedId
+              );
+            } else {
+              // Find the action to get arguments
+              const action = actions.find(
+                (a) =>
+                  a.command === selectedAction.detail &&
+                  a.label === selectedAction.label
+              );
+              await vscode.commands.executeCommand(
+                selectedAction.detail,
+                ...(action?.arguments || [])
+              );
+            }
+          }
+        }
       }
     }
   } catch (error) {
@@ -761,7 +840,7 @@ export interface DiagnosticInfo {
 export function getDiagnosticInfo(): DiagnosticInfo {
   return {
     activeExtensionCount: activeExtensions.size,
-    registeredExtensions: Array.from(activeExtensions),
+    registeredExtensions: Array.from(activeExtensions.keys()),
     statusBarExists: statusBarItem !== undefined,
     statusBarVisible: statusBarItem !== undefined && activeExtensions.size > 0,
     commandRegistered: commandDisposable !== undefined,
