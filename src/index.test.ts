@@ -338,5 +338,227 @@ describe("Shared Status Bar", () => {
       expect(statusBar).toBeDefined();
       expect(statusBar?.text).toBe("$(layers) ACS");
     });
+
+    it("handles diagnostic command registration failure gracefully", () => {
+      // Mock registerCommand to throw an error
+      const originalRegisterCommand = vscode.commands.registerCommand;
+      let callCount = 0;
+      (vscode.commands.registerCommand as any) = jest.fn((command: string) => {
+        callCount++;
+        // Fail only for diagnostic command registration
+        if (command === "mcp-acs.diagnostics") {
+          throw new Error("Diagnostic command registration failed");
+        }
+        return { dispose: jest.fn() };
+      });
+
+      // Create mock output channel (this triggers diagnostic command registration)
+      const mockChannel = {
+        appendLine: jest.fn(),
+        dispose: jest.fn(),
+        show: jest.fn(),
+      };
+
+      // Should not throw when setting output channel
+      expect(() => {
+        (require("./index") as any).setOutputChannel(mockChannel);
+      }).not.toThrow();
+
+      // Error should be logged
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to register mcp-acs.diagnostics command:",
+        expect.any(Error)
+      );
+
+      // Extension should still be able to register normally
+      registerExtension("test-ext");
+      expect(getActiveExtensionCount()).toBe(1);
+
+      // Restore original mock
+      vscode.commands.registerCommand = originalRegisterCommand;
+    });
+
+    it("handles status bar show() failure gracefully", () => {
+      registerExtension("test-ext");
+      const statusBar = getStatusBarItem();
+
+      // Mock show to throw an error
+      if (statusBar) {
+        statusBar.show = jest.fn(() => {
+          throw new Error("Show failed");
+        });
+      }
+
+      // Register another extension (will try to show status bar)
+      expect(() => registerExtension("test-ext-2")).not.toThrow();
+
+      // Error should be logged
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to show status bar item:",
+        expect.any(Error)
+      );
+
+      // Extension should still be registered
+      expect(getActiveExtensionCount()).toBe(2);
+    });
+
+    it("handles status bar hide() failure gracefully", () => {
+      registerExtension("test-ext");
+      const statusBar = getStatusBarItem();
+
+      // Mock hide to throw an error
+      if (statusBar) {
+        statusBar.hide = jest.fn(() => {
+          throw new Error("Hide failed");
+        });
+      }
+
+      // Unregister extension (will try to hide status bar)
+      expect(() => unregisterExtension("test-ext")).not.toThrow();
+
+      // Error should be logged
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to hide status bar item:",
+        expect.any(Error)
+      );
+
+      // Extension should still be unregistered
+      expect(getActiveExtensionCount()).toBe(0);
+    });
+
+    it("handles diagnostic display failure gracefully", async () => {
+      // Mock showInformationMessage to throw an error
+      const originalShowInformationMessage =
+        vscode.window.showInformationMessage;
+      (vscode.window.showInformationMessage as any) = jest.fn(() => {
+        throw new Error("Show information message failed");
+      });
+
+      registerExtension("test-ext");
+
+      // Get the diagnostic command callback
+      const registerCommandCalls = (
+        vscode.commands.registerCommand as jest.Mock
+      ).mock.calls;
+      const diagnosticCommandCall = registerCommandCalls.find(
+        (call) => call[0] === "mcp-acs.diagnostics"
+      );
+
+      if (diagnosticCommandCall) {
+        const diagnosticCallback = diagnosticCommandCall[1];
+
+        // Should not throw when diagnostic command is invoked
+        await expect(diagnosticCallback()).resolves.not.toThrow();
+
+        // Error should be logged
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          "Failed to show diagnostics:",
+          expect.any(Error)
+        );
+
+        // Error message should be shown to user
+        expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
+          "Failed to display diagnostics"
+        );
+      }
+
+      // Restore original mock
+      vscode.window.showInformationMessage = originalShowInformationMessage;
+    });
+
+    it("handles diagnostic command disposal errors gracefully", () => {
+      // Create mock output channel to trigger diagnostic command registration
+      const mockChannel = {
+        appendLine: jest.fn(),
+        dispose: jest.fn(),
+        show: jest.fn(),
+      };
+      (require("./index") as any).setOutputChannel(mockChannel);
+
+      registerExtension("test-ext");
+
+      // Mock the diagnostic command disposable to throw on dispose
+      const registerCommandCalls = (
+        vscode.commands.registerCommand as jest.Mock
+      ).mock.calls;
+      const diagnosticCommandCall = registerCommandCalls.find(
+        (call) => call[0] === "mcp-acs.diagnostics"
+      );
+
+      if (diagnosticCommandCall) {
+        const diagnosticDisposable = (
+          vscode.commands.registerCommand as jest.Mock
+        ).mock.results.find(
+          (result, index) =>
+            registerCommandCalls[index][0] === "mcp-acs.diagnostics"
+        )?.value;
+
+        if (diagnosticDisposable) {
+          diagnosticDisposable.dispose = jest.fn(() => {
+            throw new Error("Diagnostic command disposal failed");
+          });
+        }
+      }
+
+      // Should not throw when disposing
+      expect(() => dispose()).not.toThrow();
+
+      // Error should be logged
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to dispose diagnostic command:",
+        expect.any(Error)
+      );
+
+      // State should still be cleaned up
+      expect(getActiveExtensionCount()).toBe(0);
+    });
+
+    it("verifies extension continues operating after all error types", () => {
+      // This test verifies that after various errors, the extension remains functional
+
+      // 1. Simulate status bar creation failure
+      const originalCreateStatusBarItem = vscode.window.createStatusBarItem;
+      (vscode.window.createStatusBarItem as any) = jest.fn(() => {
+        throw new Error("Creation failed");
+      });
+
+      registerExtension("test-ext-1");
+      expect(getActiveExtensionCount()).toBe(1);
+
+      // Restore
+      vscode.window.createStatusBarItem = originalCreateStatusBarItem;
+
+      // 2. Register another extension - should work now
+      registerExtension("test-ext-2");
+      expect(getActiveExtensionCount()).toBe(2);
+      expect(getStatusBarItem()).toBeDefined();
+
+      // 3. Simulate show failure
+      const statusBar = getStatusBarItem();
+      if (statusBar) {
+        const originalShow = statusBar.show;
+        statusBar.show = jest.fn(() => {
+          throw new Error("Show failed");
+        });
+
+        // Register another extension
+        registerExtension("test-ext-3");
+        expect(getActiveExtensionCount()).toBe(3);
+
+        // Restore
+        statusBar.show = originalShow;
+      }
+
+      // 4. Verify status bar is still functional
+      expect(getStatusBarItem()).toBeDefined();
+      expect(getStatusBarItem()?.text).toBe("$(layers) ACS");
+      expect(getStatusBarItem()?.tooltip).toBe("ACS Extensions (3 active)");
+
+      // 5. Unregister all extensions
+      unregisterExtension("test-ext-1");
+      unregisterExtension("test-ext-2");
+      unregisterExtension("test-ext-3");
+      expect(getActiveExtensionCount()).toBe(0);
+    });
   });
 });

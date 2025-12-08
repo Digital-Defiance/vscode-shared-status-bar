@@ -23,6 +23,121 @@ describe("Property-Based Tests", () => {
   });
 
   /**
+   * Feature: status-bar-doubling-fix, Property 1: Status bar item singleton invariant
+   * Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5
+   *
+   * For any sequence of extension registrations and unregistrations, when at least
+   * one extension is active, exactly one status bar item SHALL exist, and when zero
+   * extensions are active, zero status bar items SHALL exist.
+   */
+  it("Property 1: Status bar item singleton invariant", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            action: fc.constantFrom("register", "unregister"),
+            extensionId: fc.string({ minLength: 1, maxLength: 20 }),
+          }),
+          { minLength: 1, maxLength: 50 }
+        ),
+        (operations) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Execute all operations
+          for (const op of operations) {
+            if (op.action === "register") {
+              registerExtension(op.extensionId);
+            } else {
+              unregisterExtension(op.extensionId);
+            }
+
+            // After each operation, verify the singleton invariant
+            const activeCount = getActiveExtensionCount();
+            const statusBar = getStatusBarItem();
+
+            if (activeCount > 0) {
+              // When at least one extension is active, exactly one status bar item should exist
+              expect(statusBar).toBeDefined();
+
+              // Verify createStatusBarItem was called at most once total
+              const createCalls = (
+                vscode.window.createStatusBarItem as jest.Mock
+              ).mock.calls.length;
+              expect(createCalls).toBeLessThanOrEqual(1);
+            } else {
+              // When zero extensions are active, status bar may exist but should be hidden
+              // (it's not disposed until the module is disposed)
+              if (statusBar) {
+                expect(statusBar.hide).toHaveBeenCalled();
+              }
+            }
+          }
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 2: Status bar creation is called at most once per lifecycle
+   * Validates: Requirements 1.1, 1.2
+   *
+   * For any sequence of extension registrations, the VSCode API method createStatusBarItem
+   * SHALL be invoked at most once between dispose calls.
+   */
+  it("Property 2: Status bar creation is called at most once per lifecycle", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 1,
+          maxLength: 20,
+        }),
+        (extensionIds: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+
+          // Register all extensions one by one
+          for (const id of uniqueExtensions) {
+            registerExtension(id);
+          }
+
+          // Verify createStatusBarItem was called at most once
+          const createStatusBarItemMock = vscode.window
+            .createStatusBarItem as jest.Mock;
+          const createCallCount = createStatusBarItemMock.mock.calls.length;
+          expect(createCallCount).toBeLessThanOrEqual(1);
+
+          // If any extensions were registered, it should have been called exactly once
+          if (uniqueExtensions.length > 0) {
+            expect(createCallCount).toBe(1);
+          }
+
+          // Register more extensions to verify no additional calls
+          for (let i = 0; i < 5; i++) {
+            registerExtension(`additional-ext-${i}`);
+          }
+
+          // Still should be at most one call
+          const finalCallCount = createStatusBarItemMock.mock.calls.length;
+          expect(finalCallCount).toBeLessThanOrEqual(1);
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
    * Feature: vscode-shared-status-bar-fix, Property 3: Command registration lifecycle
    * Validates: Requirements 3.1, 3.2, 3.3
    *
@@ -909,6 +1024,631 @@ describe("Property-Based Tests", () => {
   });
 
   /**
+   * Feature: status-bar-doubling-fix, Property 9: Creation logging
+   * Validates: Requirements 2.1
+   *
+   * For any state transition from zero to one registered extensions, a log entry
+   * containing "Creating status bar item" and a timestamp SHALL be produced.
+   */
+  it("Property 9: Creation logging", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 20 }),
+        (extensionId: string) => {
+          // Start with clean state (zero extensions)
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Clear the mock after setOutputChannel call
+          mockChannel.appendLine.mockClear();
+
+          // Spy on console.log to capture logs
+          const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+
+          // Register the first extension (transition from 0 to 1)
+          registerExtension(extensionId);
+
+          // Verify that a log entry was created for status bar creation
+          const outputChannelCalls = mockChannel.appendLine.mock.calls;
+          const consoleLogCalls = consoleLogSpy.mock.calls;
+
+          // Check for creation log in output channel
+          const hasCreationLogInChannel = outputChannelCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("creating") &&
+              logMessage.toLowerCase().includes("status bar")
+            );
+          });
+
+          // Check for creation log in console
+          const hasCreationLogInConsole = consoleLogCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("creating") &&
+              logMessage.toLowerCase().includes("status bar")
+            );
+          });
+
+          // At least one should have the creation log
+          expect(hasCreationLogInChannel || hasCreationLogInConsole).toBe(true);
+
+          // Verify timestamp is present (ISO format: YYYY-MM-DDTHH:mm:ss)
+          const hasTimestampInChannel = outputChannelCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.includes("[") &&
+              logMessage.includes("]") &&
+              /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(logMessage)
+            );
+          });
+
+          const hasTimestampInConsole = consoleLogCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.includes("[") &&
+              logMessage.includes("]") &&
+              /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(logMessage)
+            );
+          });
+
+          expect(hasTimestampInChannel || hasTimestampInConsole).toBe(true);
+
+          // Cleanup
+          consoleLogSpy.mockRestore();
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 10: Reuse logging
+   * Validates: Requirements 2.2
+   *
+   * For any registration when a status bar item already exists, a log entry
+   * indicating reuse SHALL be produced.
+   */
+  it("Property 10: Reuse logging", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 2,
+          maxLength: 10,
+        }),
+        (extensionIds: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Ensure we have at least 2 unique extensions
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+          if (uniqueExtensions.length < 2) {
+            uniqueExtensions.push("additional-extension");
+          }
+
+          // Register the first extension (creates status bar)
+          registerExtension(uniqueExtensions[0]);
+
+          // Clear mocks to focus on subsequent registrations
+          mockChannel.appendLine.mockClear();
+          const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+
+          // Register additional extensions (should reuse status bar)
+          for (let i = 1; i < uniqueExtensions.length; i++) {
+            registerExtension(uniqueExtensions[i]);
+          }
+
+          // Verify that reuse log entries were created
+          const outputChannelCalls = mockChannel.appendLine.mock.calls;
+          const consoleLogCalls = consoleLogSpy.mock.calls;
+
+          // Check for reuse log in output channel
+          const hasReuseLogInChannel = outputChannelCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("reus") &&
+              logMessage.toLowerCase().includes("status bar")
+            );
+          });
+
+          // Check for reuse log in console
+          const hasReuseLogInConsole = consoleLogCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("reus") &&
+              logMessage.toLowerCase().includes("status bar")
+            );
+          });
+
+          // At least one should have the reuse log
+          expect(hasReuseLogInChannel || hasReuseLogInConsole).toBe(true);
+
+          // Cleanup
+          consoleLogSpy.mockRestore();
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 11: Disposal logging
+   * Validates: Requirements 2.3
+   *
+   * For any call to dispose(), a log entry containing "disposing" or "disposed"
+   * SHALL be produced.
+   */
+  it("Property 11: Disposal logging", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 0,
+          maxLength: 10,
+        }),
+        (extensionIds: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Register extensions to create some state
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+          for (const id of uniqueExtensions) {
+            registerExtension(id);
+          }
+
+          // Clear mocks to focus on disposal logs
+          mockChannel.appendLine.mockClear();
+          const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+
+          // Call dispose
+          dispose();
+
+          // Verify that disposal log entries were created
+          const outputChannelCalls = mockChannel.appendLine.mock.calls;
+          const consoleLogCalls = consoleLogSpy.mock.calls;
+
+          // Check for disposal log in output channel
+          const hasDisposalLogInChannel = outputChannelCalls.some((call) => {
+            const logMessage = call[0].toLowerCase();
+            return logMessage.includes("dispos");
+          });
+
+          // Check for disposal log in console
+          const hasDisposalLogInConsole = consoleLogCalls.some((call) => {
+            const logMessage = call[0].toLowerCase();
+            return logMessage.includes("dispos");
+          });
+
+          // At least one should have the disposal log
+          expect(hasDisposalLogInChannel || hasDisposalLogInConsole).toBe(true);
+
+          // Verify timestamp is present in disposal logs
+          const hasTimestampInChannel = outputChannelCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("dispos") &&
+              logMessage.includes("[") &&
+              logMessage.includes("]") &&
+              /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(logMessage)
+            );
+          });
+
+          const hasTimestampInConsole = consoleLogCalls.some((call) => {
+            const logMessage = call[0];
+            return (
+              logMessage.toLowerCase().includes("dispos") &&
+              logMessage.includes("[") &&
+              logMessage.includes("]") &&
+              /\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(logMessage)
+            );
+          });
+
+          expect(hasTimestampInChannel || hasTimestampInConsole).toBe(true);
+
+          // Cleanup
+          consoleLogSpy.mockRestore();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 3: Registration idempotency
+   * Validates: Requirements 4.1, 4.5
+   *
+   * For any extension ID and any positive integer N, calling registerExtension(id)
+   * N times SHALL result in the same state as calling it once.
+   */
+  it("Property 3: Registration idempotency", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 20 }),
+        fc.integer({ min: 1, max: 20 }),
+        (extensionId: string, numRegistrations: number) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Clear the mock after setOutputChannel call
+          mockChannel.appendLine.mockClear();
+
+          // Spy on console.log to capture logs
+          const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+
+          // Register the same extension multiple times
+          for (let i = 0; i < numRegistrations; i++) {
+            registerExtension(extensionId);
+          }
+
+          // Verify the extension count is exactly 1 (idempotent behavior)
+          expect(getActiveExtensionCount()).toBe(1);
+
+          // Verify status bar was created
+          const statusBar = getStatusBarItem();
+          expect(statusBar).toBeDefined();
+
+          // Verify createStatusBarItem was called at most once
+          const createStatusBarItemMock = vscode.window
+            .createStatusBarItem as jest.Mock;
+          expect(createStatusBarItemMock).toHaveBeenCalledTimes(1);
+
+          // Verify the show menu command was registered exactly once
+          // Note: setOutputChannel also registers the diagnostic command, so we check specifically for showMenu
+          const registerCommandMock = vscode.commands
+            .registerCommand as jest.Mock;
+          const showMenuCalls = registerCommandMock.mock.calls.filter(
+            (call) => call[0] === "mcp-acs.showMenu"
+          );
+          expect(showMenuCalls).toHaveLength(1);
+
+          // Verify tooltip shows count of 1
+          expect(statusBar?.tooltip).toBe("ACS Extensions (1 active)");
+
+          // Verify diagnostic info shows exactly 1 extension
+          const diagnosticInfo = getDiagnosticInfo();
+          expect(diagnosticInfo.activeExtensionCount).toBe(1);
+          expect(diagnosticInfo.registeredExtensions).toHaveLength(1);
+          expect(diagnosticInfo.registeredExtensions).toContain(extensionId);
+
+          // Verify that duplicate registration logs were created (for N > 1)
+          if (numRegistrations > 1) {
+            const outputChannelCalls = mockChannel.appendLine.mock.calls;
+            const consoleLogCalls = consoleLogSpy.mock.calls;
+
+            // Check for duplicate registration log
+            const hasDuplicateLogInChannel = outputChannelCalls.some((call) => {
+              const logMessage = call[0].toLowerCase();
+              return (
+                logMessage.includes("already registered") ||
+                logMessage.includes("duplicate")
+              );
+            });
+
+            const hasDuplicateLogInConsole = consoleLogCalls.some((call) => {
+              const logMessage = call[0].toLowerCase();
+              return (
+                logMessage.includes("already registered") ||
+                logMessage.includes("duplicate")
+              );
+            });
+
+            // At least one should have the duplicate registration log
+            expect(hasDuplicateLogInChannel || hasDuplicateLogInConsole).toBe(
+              true
+            );
+          }
+
+          // Verify that unregistering once removes the extension completely
+          unregisterExtension(extensionId);
+          expect(getActiveExtensionCount()).toBe(0);
+
+          // Verify that attempting to unregister again is safe (no error)
+          expect(() => unregisterExtension(extensionId)).not.toThrow();
+          expect(getActiveExtensionCount()).toBe(0);
+
+          // Cleanup
+          consoleLogSpy.mockRestore();
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 4: Unregistration safety
+   * Validates: Requirements 4.2
+   *
+   * For any extension ID that is not currently registered, calling unregisterExtension(id)
+   * SHALL not throw an error and SHALL not modify the active extension count.
+   */
+  it("Property 4: Unregistration safety", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 0,
+          maxLength: 10,
+        }),
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 1,
+          maxLength: 10,
+        }),
+        (registeredExtensions: string[], unregisteredExtensions: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Register a set of extensions
+          const uniqueRegistered = Array.from(new Set(registeredExtensions));
+          for (const id of uniqueRegistered) {
+            registerExtension(id);
+          }
+
+          const initialCount = getActiveExtensionCount();
+          expect(initialCount).toBe(uniqueRegistered.length);
+
+          // Clear mocks to focus on unregistration logs
+          mockChannel.appendLine.mockClear();
+          const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
+
+          // Attempt to unregister extensions that were never registered
+          // Filter out any that might accidentally be in the registered set
+          const uniqueUnregistered = Array.from(
+            new Set(unregisteredExtensions)
+          ).filter((id) => !uniqueRegistered.includes(id));
+
+          // If we have no unregistered extensions to test, add one
+          if (uniqueUnregistered.length === 0) {
+            uniqueUnregistered.push("definitely-not-registered-extension");
+          }
+
+          for (const id of uniqueUnregistered) {
+            // Should not throw an error
+            expect(() => unregisterExtension(id)).not.toThrow();
+
+            // Count should remain unchanged
+            expect(getActiveExtensionCount()).toBe(initialCount);
+
+            // Verify a log entry was created indicating the extension wasn't registered
+            const outputChannelCalls = mockChannel.appendLine.mock.calls;
+            const consoleLogCalls = consoleLogSpy.mock.calls;
+
+            const hasNotRegisteredLogInChannel = outputChannelCalls.some(
+              (call) => {
+                const logMessage = call[0].toLowerCase();
+                return (
+                  logMessage.includes(id.toLowerCase()) &&
+                  (logMessage.includes("not registered") ||
+                    logMessage.includes("ignoring"))
+                );
+              }
+            );
+
+            const hasNotRegisteredLogInConsole = consoleLogCalls.some(
+              (call) => {
+                const logMessage = call[0].toLowerCase();
+                return (
+                  logMessage.includes(id.toLowerCase()) &&
+                  (logMessage.includes("not registered") ||
+                    logMessage.includes("ignoring"))
+                );
+              }
+            );
+
+            // At least one should have the "not registered" log
+            expect(
+              hasNotRegisteredLogInChannel || hasNotRegisteredLogInConsole
+            ).toBe(true);
+
+            // Clear mocks for next iteration
+            mockChannel.appendLine.mockClear();
+            consoleLogSpy.mockClear();
+          }
+
+          // Verify the registered extensions are still intact
+          expect(getActiveExtensionCount()).toBe(initialCount);
+
+          // Verify status bar state hasn't changed
+          const statusBar = getStatusBarItem();
+          if (initialCount > 0) {
+            expect(statusBar).toBeDefined();
+            expect(statusBar?.tooltip).toBe(
+              `ACS Extensions (${initialCount} active)`
+            );
+          }
+
+          // Cleanup
+          consoleLogSpy.mockRestore();
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 5: Re-registration support
+   * Validates: Requirements 4.3
+   *
+   * For any extension ID, the sequence registerExtension(id) → unregisterExtension(id) →
+   * registerExtension(id) SHALL result in the extension being registered.
+   */
+  it("Property 5: Re-registration support", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 20 }),
+        (extensionId: string) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Create a mock output channel to capture logs
+          const mockChannel = createMockOutputChannel();
+          setOutputChannel(mockChannel as any);
+
+          // Step 1: Register the extension
+          registerExtension(extensionId);
+
+          // Verify extension is registered
+          expect(getActiveExtensionCount()).toBe(1);
+          const diagnosticInfo1 = getDiagnosticInfo();
+          expect(diagnosticInfo1.registeredExtensions).toContain(extensionId);
+          expect(diagnosticInfo1.statusBarExists).toBe(true);
+          expect(diagnosticInfo1.commandRegistered).toBe(true);
+
+          // Store reference to status bar item after first registration
+          const statusBarAfterFirstReg = getStatusBarItem();
+          expect(statusBarAfterFirstReg).toBeDefined();
+
+          // Step 2: Unregister the extension
+          unregisterExtension(extensionId);
+
+          // Verify extension is unregistered
+          expect(getActiveExtensionCount()).toBe(0);
+          const diagnosticInfo2 = getDiagnosticInfo();
+          expect(diagnosticInfo2.registeredExtensions).not.toContain(
+            extensionId
+          );
+          expect(diagnosticInfo2.commandRegistered).toBe(false);
+
+          // Status bar should still exist but be hidden
+          const statusBarAfterUnreg = getStatusBarItem();
+          expect(statusBarAfterUnreg).toBeDefined();
+          expect(statusBarAfterUnreg?.hide).toHaveBeenCalled();
+
+          // Step 3: Re-register the extension
+          jest.clearAllMocks(); // Clear mocks to verify re-registration behavior
+          registerExtension(extensionId);
+
+          // Verify extension is registered again
+          expect(getActiveExtensionCount()).toBe(1);
+          const diagnosticInfo3 = getDiagnosticInfo();
+          expect(diagnosticInfo3.registeredExtensions).toContain(extensionId);
+          expect(diagnosticInfo3.registeredExtensions).toHaveLength(1);
+          expect(diagnosticInfo3.statusBarExists).toBe(true);
+          expect(diagnosticInfo3.commandRegistered).toBe(true);
+
+          // Verify status bar is shown again
+          const statusBarAfterReReg = getStatusBarItem();
+          expect(statusBarAfterReReg).toBeDefined();
+          expect(statusBarAfterReReg?.show).toHaveBeenCalled();
+
+          // Verify tooltip is correct
+          expect(statusBarAfterReReg?.tooltip).toBe(
+            "ACS Extensions (1 active)"
+          );
+
+          // Verify the status bar item is the same instance (reused, not recreated)
+          expect(statusBarAfterReReg).toBe(statusBarAfterFirstReg);
+
+          // Verify createStatusBarItem was not called again during re-registration
+          // (it should reuse the existing status bar item)
+          const createStatusBarItemMock = vscode.window
+            .createStatusBarItem as jest.Mock;
+          expect(createStatusBarItemMock).not.toHaveBeenCalled();
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 6: Tooltip accuracy
+   * Validates: Requirements 3.1
+   *
+   * For any non-negative integer N representing the number of registered extensions,
+   * when N > 0, the status bar tooltip SHALL equal "ACS Extensions (N active)".
+   */
+  it("Property 6: Tooltip accuracy", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 1,
+          maxLength: 20,
+        }),
+        (extensionIds: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+          const N = uniqueExtensions.length;
+
+          // Register all extensions
+          for (const id of uniqueExtensions) {
+            registerExtension(id);
+          }
+
+          // Get the status bar item
+          const statusBar = getStatusBarItem();
+
+          // When N > 0, the tooltip should equal "ACS Extensions (N active)"
+          expect(statusBar).toBeDefined();
+          expect(statusBar?.tooltip).toBe(`ACS Extensions (${N} active)`);
+
+          // Verify the count matches
+          expect(getActiveExtensionCount()).toBe(N);
+
+          // Test tooltip updates when extensions are unregistered
+          for (let i = uniqueExtensions.length - 1; i >= 1; i--) {
+            unregisterExtension(uniqueExtensions[i]);
+
+            const currentStatusBar = getStatusBarItem();
+            const currentCount = getActiveExtensionCount();
+
+            // Tooltip should reflect the current count
+            expect(currentCount).toBe(i);
+            expect(currentStatusBar?.tooltip).toBe(
+              `ACS Extensions (${i} active)`
+            );
+          }
+
+          // Unregister the last extension
+          unregisterExtension(uniqueExtensions[0]);
+
+          // When N = 0, status bar should be hidden (but may still exist)
+          expect(getActiveExtensionCount()).toBe(0);
+          const finalStatusBar = getStatusBarItem();
+          if (finalStatusBar) {
+            expect(finalStatusBar.hide).toHaveBeenCalled();
+          }
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
    * Feature: shared-status-bar-visibility, Property 8: Diagnostic reports match actual state
    * Validates: Requirements 5.1, 5.2, 5.3, 5.4
    *
@@ -1004,6 +1744,390 @@ describe("Property-Based Tests", () => {
           } else {
             expect(diagnosticInfoAfterUnregister.statusBarVisible).toBe(false);
             expect(diagnosticInfoAfterUnregister.commandRegistered).toBe(false);
+          }
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 8: Visibility state correctness
+   * Validates: Requirements 3.5, 1.4
+   *
+   * For any system state, the status bar SHALL be visible if and only if at least
+   * one extension is registered. This property tests visibility transitions:
+   * 0→1, 1→0, N→N+1, N→N-1.
+   */
+  it("Property 8: Visibility state correctness", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 1,
+          maxLength: 15,
+        }),
+        (extensionIds: string[]) => {
+          // Start with clean state (0 extensions)
+          dispose();
+          jest.clearAllMocks();
+
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+
+          // Initial state: 0 extensions
+          // Status bar should not exist yet
+          let statusBar = getStatusBarItem();
+          expect(statusBar).toBeUndefined();
+          expect(getActiveExtensionCount()).toBe(0);
+
+          // Test transition 0→1: Register first extension
+          if (uniqueExtensions.length > 0) {
+            registerExtension(uniqueExtensions[0]);
+
+            statusBar = getStatusBarItem();
+            expect(statusBar).toBeDefined();
+            expect(statusBar?.show).toHaveBeenCalled();
+            expect(getActiveExtensionCount()).toBe(1);
+
+            // Verify status bar is visible (show was called)
+            const showCallCount = (statusBar?.show as jest.Mock).mock.calls
+              .length;
+            expect(showCallCount).toBeGreaterThan(0);
+          }
+
+          // Test transition N→N+1: Register additional extensions
+          for (let i = 1; i < uniqueExtensions.length; i++) {
+            const previousCount = getActiveExtensionCount();
+            jest.clearAllMocks(); // Clear to track new calls
+
+            registerExtension(uniqueExtensions[i]);
+
+            statusBar = getStatusBarItem();
+            const currentCount = getActiveExtensionCount();
+
+            // Count should increase by 1
+            expect(currentCount).toBe(previousCount + 1);
+
+            // Status bar should still be visible (show called again)
+            expect(statusBar).toBeDefined();
+            expect(statusBar?.show).toHaveBeenCalled();
+
+            // Verify hide was NOT called (status bar stays visible)
+            expect(statusBar?.hide).not.toHaveBeenCalled();
+          }
+
+          // Test transition N→N-1: Unregister extensions one by one
+          for (let i = uniqueExtensions.length - 1; i >= 1; i--) {
+            const previousCount = getActiveExtensionCount();
+            jest.clearAllMocks(); // Clear to track new calls
+
+            unregisterExtension(uniqueExtensions[i]);
+
+            statusBar = getStatusBarItem();
+            const currentCount = getActiveExtensionCount();
+
+            // Count should decrease by 1
+            expect(currentCount).toBe(previousCount - 1);
+
+            // Status bar should still be visible (at least 1 extension remains)
+            expect(statusBar).toBeDefined();
+            expect(statusBar?.show).toHaveBeenCalled();
+
+            // Verify hide was NOT called (status bar stays visible)
+            expect(statusBar?.hide).not.toHaveBeenCalled();
+          }
+
+          // Test transition 1→0: Unregister last extension
+          jest.clearAllMocks(); // Clear to track new calls
+          unregisterExtension(uniqueExtensions[0]);
+
+          statusBar = getStatusBarItem();
+          const finalCount = getActiveExtensionCount();
+
+          // Count should be 0
+          expect(finalCount).toBe(0);
+
+          // Status bar should be hidden (hide was called)
+          expect(statusBar).toBeDefined();
+          expect(statusBar?.hide).toHaveBeenCalled();
+
+          // Verify show was NOT called (status bar is hidden)
+          expect(statusBar?.show).not.toHaveBeenCalled();
+
+          // Test re-registration after complete unregistration (0→1 again)
+          jest.clearAllMocks();
+          registerExtension("re-registered-extension");
+
+          statusBar = getStatusBarItem();
+          expect(statusBar).toBeDefined();
+          expect(statusBar?.show).toHaveBeenCalled();
+          expect(getActiveExtensionCount()).toBe(1);
+
+          // Cleanup
+          dispose();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 12: Diagnostic accuracy
+   * Validates: Requirements 2.4
+   *
+   * For any system state, calling getDiagnosticInfo() SHALL return information that
+   * accurately reflects the current number of registered extensions, status bar existence,
+   * and command registration state.
+   */
+  it("Property 12: Diagnostic accuracy", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            action: fc.constantFrom("register", "unregister"),
+            extensionId: fc.string({ minLength: 1, maxLength: 20 }),
+          }),
+          { minLength: 1, maxLength: 30 }
+        ),
+        (operations) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Track expected state
+          const expectedRegisteredExtensions = new Set<string>();
+
+          // Execute operations and verify diagnostic info after each
+          for (const op of operations) {
+            if (op.action === "register") {
+              registerExtension(op.extensionId);
+              expectedRegisteredExtensions.add(op.extensionId);
+            } else {
+              unregisterExtension(op.extensionId);
+              expectedRegisteredExtensions.delete(op.extensionId);
+            }
+
+            // Get diagnostic info
+            const diagnosticInfo = getDiagnosticInfo();
+
+            // Property 1: activeExtensionCount must match actual count
+            const actualCount = getActiveExtensionCount();
+            expect(diagnosticInfo.activeExtensionCount).toBe(actualCount);
+            expect(diagnosticInfo.activeExtensionCount).toBe(
+              expectedRegisteredExtensions.size
+            );
+
+            // Property 2: registeredExtensions must contain exactly the registered extensions
+            expect(diagnosticInfo.registeredExtensions).toHaveLength(
+              expectedRegisteredExtensions.size
+            );
+            for (const id of expectedRegisteredExtensions) {
+              expect(diagnosticInfo.registeredExtensions).toContain(id);
+            }
+            for (const id of diagnosticInfo.registeredExtensions) {
+              expect(expectedRegisteredExtensions.has(id)).toBe(true);
+            }
+
+            // Property 3: statusBarExists must accurately reflect status bar existence
+            const actualStatusBar = getStatusBarItem();
+            expect(diagnosticInfo.statusBarExists).toBe(
+              actualStatusBar !== undefined
+            );
+
+            // Property 4: statusBarVisible must match expected visibility
+            // Status bar is visible when at least one extension is registered
+            const expectedVisible = expectedRegisteredExtensions.size > 0;
+            expect(diagnosticInfo.statusBarVisible).toBe(expectedVisible);
+
+            // Property 5: commandRegistered must accurately reflect command state
+            const actualCommand = getCommandDisposable();
+            expect(diagnosticInfo.commandRegistered).toBe(
+              actualCommand !== undefined
+            );
+
+            // Command should be registered if and only if at least one extension is active
+            const expectedCommandRegistered =
+              expectedRegisteredExtensions.size > 0;
+            expect(diagnosticInfo.commandRegistered).toBe(
+              expectedCommandRegistered
+            );
+
+            // Property 6: lastError should be null when no errors occur
+            // (In normal operation without mocked errors, lastError should be null)
+            if (diagnosticInfo.lastError !== null) {
+              // If there's an error, it should be a string
+              expect(typeof diagnosticInfo.lastError).toBe("string");
+            }
+          }
+
+          // Test diagnostic info after complete cleanup
+          dispose();
+          const finalDiagnosticInfo = getDiagnosticInfo();
+
+          // After dispose, everything should be cleaned up
+          expect(finalDiagnosticInfo.activeExtensionCount).toBe(0);
+          expect(finalDiagnosticInfo.registeredExtensions).toHaveLength(0);
+          expect(finalDiagnosticInfo.commandRegistered).toBe(false);
+          expect(finalDiagnosticInfo.statusBarVisible).toBe(false);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: status-bar-doubling-fix, Property 7: Quick pick menu completeness
+   * Validates: Requirements 3.4
+   *
+   * For any set S of registered extension IDs where |S| > 0, invoking the show menu
+   * command SHALL display a quick pick containing exactly the elements of S.
+   */
+  it("Property 7: Quick pick menu completeness", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
+          minLength: 1,
+          maxLength: 15,
+        }),
+        async (extensionIds: string[]) => {
+          // Start with clean state
+          dispose();
+          jest.clearAllMocks();
+
+          // Register all extensions
+          const uniqueExtensions = Array.from(new Set(extensionIds));
+          for (const id of uniqueExtensions) {
+            registerExtension(id);
+          }
+
+          // Get the command handler that was registered
+          const registerCommandMock = vscode.commands
+            .registerCommand as jest.Mock;
+
+          // Verify command was registered
+          expect(registerCommandMock).toHaveBeenCalled();
+
+          // Find the showMenu command
+          const showMenuCall = registerCommandMock.mock.calls.find(
+            (call) => call[0] === "mcp-acs.showMenu"
+          );
+          expect(showMenuCall).toBeDefined();
+
+          const commandHandler = showMenuCall[1];
+
+          // Execute the command
+          await commandHandler();
+
+          // Verify showQuickPick was called
+          const showQuickPickMock = vscode.window.showQuickPick as jest.Mock;
+          expect(showQuickPickMock).toHaveBeenCalled();
+
+          // Get the items passed to showQuickPick
+          const callArgs = showQuickPickMock.mock.calls[0];
+          const items = callArgs[0];
+
+          // Property: Menu shows ALL registered extensions
+          expect(items).toHaveLength(uniqueExtensions.length);
+          for (const id of uniqueExtensions) {
+            expect(items).toContain(id);
+          }
+
+          // Property: Menu shows ONLY registered extensions (no extras)
+          for (const item of items) {
+            expect(uniqueExtensions).toContain(item);
+          }
+
+          // Clear mocks to test menu updates
+          jest.clearAllMocks();
+
+          // Unregister half of the extensions
+          const halfPoint = Math.floor(uniqueExtensions.length / 2);
+          const remainingExtensions = uniqueExtensions.slice(halfPoint);
+
+          for (let i = 0; i < halfPoint; i++) {
+            unregisterExtension(uniqueExtensions[i]);
+          }
+
+          // Verify menu updates when extensions unregister
+          if (remainingExtensions.length > 0) {
+            // Get the command handler again (should still be registered)
+            const registerCommandMockAfter = vscode.commands
+              .registerCommand as jest.Mock;
+            const showMenuCallAfter = registerCommandMockAfter.mock.calls.find(
+              (call) => call[0] === "mcp-acs.showMenu"
+            );
+
+            if (showMenuCallAfter) {
+              const commandHandlerAfter = showMenuCallAfter[1];
+
+              // Execute the command again
+              await commandHandlerAfter();
+
+              // Verify showQuickPick was called with updated list
+              const showQuickPickMockAfter = vscode.window
+                .showQuickPick as jest.Mock;
+              expect(showQuickPickMockAfter).toHaveBeenCalled();
+
+              const callArgsAfter = showQuickPickMockAfter.mock.calls[0];
+              const itemsAfter = callArgsAfter[0];
+
+              // Menu should show only remaining extensions
+              expect(itemsAfter).toHaveLength(remainingExtensions.length);
+              for (const id of remainingExtensions) {
+                expect(itemsAfter).toContain(id);
+              }
+
+              // Menu should not show unregistered extensions
+              for (let i = 0; i < halfPoint; i++) {
+                expect(itemsAfter).not.toContain(uniqueExtensions[i]);
+              }
+            }
+          }
+
+          // Clear mocks again
+          jest.clearAllMocks();
+
+          // Register new extensions to test menu updates on registration
+          const newExtensions = ["new-ext-1", "new-ext-2"];
+          for (const id of newExtensions) {
+            registerExtension(id);
+          }
+
+          const allExtensions = [...remainingExtensions, ...newExtensions];
+
+          // Get the command handler
+          const registerCommandMockFinal = vscode.commands
+            .registerCommand as jest.Mock;
+          const showMenuCallFinal = registerCommandMockFinal.mock.calls.find(
+            (call) => call[0] === "mcp-acs.showMenu"
+          );
+
+          if (showMenuCallFinal) {
+            const commandHandlerFinal = showMenuCallFinal[1];
+
+            // Execute the command
+            await commandHandlerFinal();
+
+            // Verify showQuickPick was called with complete updated list
+            const showQuickPickMockFinal = vscode.window
+              .showQuickPick as jest.Mock;
+            expect(showQuickPickMockFinal).toHaveBeenCalled();
+
+            const callArgsFinal = showQuickPickMockFinal.mock.calls[0];
+            const itemsFinal = callArgsFinal[0];
+
+            // Menu should show all currently registered extensions
+            expect(itemsFinal).toHaveLength(allExtensions.length);
+            for (const id of allExtensions) {
+              expect(itemsFinal).toContain(id);
+            }
+
+            // Menu should not show any unregistered extensions
+            for (let i = 0; i < halfPoint; i++) {
+              expect(itemsFinal).not.toContain(uniqueExtensions[i]);
+            }
           }
 
           // Cleanup

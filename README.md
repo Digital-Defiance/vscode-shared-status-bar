@@ -304,6 +304,45 @@ Use this checklist to systematically debug status bar issues:
 - [ ] Clicking status bar shows quick pick menu
 - [ ] Quick pick menu lists all registered extensions
 
+## Architecture
+
+### Singleton Pattern
+
+The shared status bar implements a **singleton pattern** to ensure only one status bar item exists regardless of how many extensions are active. This prevents the "status bar doubling" bug where multiple status bar items could appear.
+
+**Key Design Principles:**
+
+1. **Single Instance**: Only one `statusBarItem` exists at any time
+2. **Defensive Checks**: Explicit verification before creating status bar items
+3. **Reuse Over Recreation**: Existing status bar items are reused, never duplicated
+4. **Comprehensive Logging**: All lifecycle events are logged for debugging
+
+**How It Works:**
+
+```typescript
+// When first extension registers:
+// - Creates the singleton status bar item
+// - Logs: "Creating status bar item"
+
+// When subsequent extensions register:
+// - Reuses the existing status bar item
+// - Logs: "Reusing existing status bar item"
+
+// When last extension unregisters:
+// - Hides the status bar item (but doesn't dispose it)
+// - Ready for next registration cycle
+```
+
+### Defensive Programming
+
+The implementation includes several defensive checks to prevent bugs:
+
+- **Pre-creation check**: Verifies status bar doesn't exist before creating
+- **Post-creation verification**: Confirms creation succeeded
+- **Safe unregistration**: Handles unregistering non-existent extensions gracefully
+- **Idempotent operations**: Registration/unregistration can be called multiple times safely
+- **Error isolation**: Each disposal operation is wrapped in try-catch
+
 ## Status Bar Behavior
 
 ### Visibility Rules
@@ -314,8 +353,8 @@ Use this checklist to systematically debug status bar issues:
 
 ### Status Bar Appearance
 
-- **Text**: `$(layers) MCP` (uses VS Code codicon)
-- **Tooltip**: `MCP Extensions (N active)` where N is the count
+- **Text**: `$(layers) ACS` (uses VS Code codicon)
+- **Tooltip**: `ACS Extensions (N active)` where N is the count
 - **Position**: Right side of status bar
 - **Priority**: 100
 
