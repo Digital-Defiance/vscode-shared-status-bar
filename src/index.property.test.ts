@@ -416,18 +416,26 @@ describe("Property-Based Tests", () => {
 
             // Get the items passed to showQuickPick
             const callArgs = showQuickPickMock.mock.calls[0];
-            const items = callArgs[0];
+            const items = callArgs[0] as vscode.QuickPickItem[];
+
+            // Filter out separator and diagnostics
+            const extensionItems = items.filter(
+              (item) => item.description === "Open Settings"
+            );
 
             // Verify all registered extensions are in the menu
-            expect(items).toHaveLength(uniqueExtensions.length);
+            expect(extensionItems).toHaveLength(uniqueExtensions.length);
+            const extensionLabels = extensionItems.map((item) => item.label);
+
             for (const id of uniqueExtensions) {
-              expect(items).toContain(id);
+              expect(extensionLabels).toContain(id);
             }
 
-            // Verify no extra items are in the menu
-            for (const item of items) {
-              expect(uniqueExtensions).toContain(item);
-            }
+            // Verify Diagnostics option exists
+            const diagnosticItem = items.find(
+              (item) => item.label === "Show Diagnostics"
+            );
+            expect(diagnosticItem).toBeDefined();
           }
 
           // Cleanup
@@ -1002,18 +1010,26 @@ describe("Property-Based Tests", () => {
 
             // Get the items passed to showQuickPick
             const callArgs = showQuickPickMock.mock.calls[0];
-            const items = callArgs[0];
+            const items = callArgs[0] as vscode.QuickPickItem[];
+
+            // Filter out separator and diagnostics
+            const extensionItems = items.filter(
+              (item) => item.description === "Open Settings"
+            );
 
             // Verify all registered extensions are in the menu
-            expect(items).toHaveLength(uniqueExtensions.length);
+            expect(extensionItems).toHaveLength(uniqueExtensions.length);
+            const extensionLabels = extensionItems.map((item) => item.label);
+
             for (const id of uniqueExtensions) {
-              expect(items).toContain(id);
+              expect(extensionLabels).toContain(id);
             }
 
-            // Verify no extra items are in the menu
-            for (const item of items) {
-              expect(uniqueExtensions).toContain(item);
-            }
+            // Verify Diagnostics option exists
+            const diagnosticItem = items.find(
+              (item) => item.label === "Show Diagnostics"
+            );
+            expect(diagnosticItem).toBeDefined();
 
             // Verify the quick pick options are correct
             const options = callArgs[1];
@@ -2035,18 +2051,26 @@ describe("Property-Based Tests", () => {
 
           // Get the items passed to showQuickPick
           const callArgs = showQuickPickMock.mock.calls[0];
-          const items = callArgs[0];
+          const items = callArgs[0] as vscode.QuickPickItem[];
+
+          // Filter out separator and diagnostics
+          const extensionItems = items.filter(
+            (item) => item.description === "Open Settings"
+          );
 
           // Property: Menu shows ALL registered extensions
-          expect(items).toHaveLength(uniqueExtensions.length);
+          expect(extensionItems).toHaveLength(uniqueExtensions.length);
+          const extensionLabels = extensionItems.map((item) => item.label);
+
           for (const id of uniqueExtensions) {
-            expect(items).toContain(id);
+            expect(extensionLabels).toContain(id);
           }
 
-          // Property: Menu shows ONLY registered extensions (no extras)
-          for (const item of items) {
-            expect(uniqueExtensions).toContain(item);
-          }
+          // Verify Diagnostics option exists
+          const diagnosticItem = items.find(
+            (item) => item.label === "Show Diagnostics"
+          );
+          expect(diagnosticItem).toBeDefined();
 
           // Clear mocks to test menu updates
           jest.clearAllMocks();

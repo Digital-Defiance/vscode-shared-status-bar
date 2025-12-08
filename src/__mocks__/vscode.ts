@@ -23,6 +23,11 @@ export const StatusBarAlignment = {
   Left: 1,
 };
 
+export const QuickPickItemKind = {
+  Separator: -1,
+  Default: 0,
+};
+
 export interface OutputChannel {
   appendLine: jest.Mock;
   dispose: jest.Mock;

@@ -82,7 +82,7 @@ function log(message: string): void {
   if (outputChannel) {
     outputChannel.appendLine(logMessage);
   }
-  console.log(logMessage);
+  // console.log(logMessage);
 }
 
 /**
@@ -412,10 +412,32 @@ async function showMenuCommand(): Promise<void> {
   try {
     log(`Showing menu with ${activeExtensions.size} extensions`);
     const extensionIds = Array.from(activeExtensions);
-    await vscode.window.showQuickPick(extensionIds, {
+
+    const items: vscode.QuickPickItem[] = [
+      ...extensionIds.map((id) => ({
+        label: id,
+        description: "Open Settings",
+      })),
+      { label: "", kind: vscode.QuickPickItemKind.Separator },
+      { label: "Show Diagnostics", description: "Troubleshooting info" },
+    ];
+
+    const selected = await vscode.window.showQuickPick(items, {
       placeHolder: "Active ACS Extensions",
       canPickMany: false,
     });
+
+    if (selected) {
+      if (selected.label === "Show Diagnostics") {
+        showDiagnostics();
+      } else {
+        // Open settings filtered by the extension ID
+        await vscode.commands.executeCommand(
+          "workbench.action.openSettings",
+          selected.label
+        );
+      }
+    }
   } catch (error) {
     logError("Failed to show quick pick menu:", error);
     vscode.window.showErrorMessage("Failed to display ACS extensions menu");
