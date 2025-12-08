@@ -466,7 +466,7 @@ describe("Property-Based Tests", () => {
 
             // Tooltip should show correct count
             expect(statusBar?.tooltip).toBe(
-              `MCP Extensions (${activeCount} active)`
+              `ACS Extensions (${activeCount} active)`
             );
           } else {
             // Status bar should not exist yet (no extensions registered)
@@ -811,7 +811,7 @@ describe("Property-Based Tests", () => {
 
             // Verify tooltip reflects the current count
             expect(statusBar).toBeDefined();
-            expect(statusBar?.tooltip).toBe(`MCP Extensions (${i + 1} active)`);
+            expect(statusBar?.tooltip).toBe(`ACS Extensions (${i + 1} active)`);
           }
 
           // Now unregister extensions one by one and verify tooltip updates
@@ -826,7 +826,7 @@ describe("Property-Based Tests", () => {
 
             if (i > 0) {
               // Verify tooltip reflects the current count
-              expect(statusBar?.tooltip).toBe(`MCP Extensions (${i} active)`);
+              expect(statusBar?.tooltip).toBe(`ACS Extensions (${i} active)`);
             }
           }
 
@@ -895,7 +895,7 @@ describe("Property-Based Tests", () => {
             const options = callArgs[1];
             expect(options).toHaveProperty(
               "placeHolder",
-              "Active MCP Extensions"
+              "Active ACS Extensions"
             );
             expect(options).toHaveProperty("canPickMany", false);
           }

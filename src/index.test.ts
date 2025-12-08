@@ -225,7 +225,7 @@ describe("Shared Status Bar", () => {
 
       // Error message should be shown to user
       expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        "Failed to display MCP extensions menu"
+        "Failed to display ACS extensions menu"
       );
 
       // Restore original mock

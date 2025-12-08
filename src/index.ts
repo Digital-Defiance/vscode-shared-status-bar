@@ -131,12 +131,12 @@ async function showMenuCommand(): Promise<void> {
     log(`Showing menu with ${activeExtensions.size} extensions`);
     const extensionIds = Array.from(activeExtensions);
     await vscode.window.showQuickPick(extensionIds, {
-      placeHolder: "Active MCP Extensions",
+      placeHolder: "Active ACS Extensions",
       canPickMany: false,
     });
   } catch (error) {
     logError("Failed to show quick pick menu:", error);
-    vscode.window.showErrorMessage("Failed to display MCP extensions menu");
+    vscode.window.showErrorMessage("Failed to display ACS extensions menu");
   }
 }
 
@@ -243,7 +243,7 @@ function updateStatusBar(): void {
   }
 
   statusBarItem.text = "$(layers) MCP";
-  statusBarItem.tooltip = `MCP Extensions (${activeExtensions.size} active)`;
+  statusBarItem.tooltip = `MCP ACS Extensions (${activeExtensions.size} active)`;
   log(`Showing status bar with ${activeExtensions.size} active extension(s)`);
   try {
     statusBarItem.show();
