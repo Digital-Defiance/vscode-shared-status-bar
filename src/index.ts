@@ -38,3 +38,11 @@ export function dispose(): void {
   statusBarItem = undefined;
   activeExtensions.clear();
 }
+
+export function getStatusBarItem(): vscode.StatusBarItem | undefined {
+  return statusBarItem;
+}
+
+export function getActiveExtensionCount(): number {
+  return activeExtensions.size;
+}
