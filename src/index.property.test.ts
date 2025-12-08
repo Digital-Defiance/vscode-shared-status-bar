@@ -761,7 +761,7 @@ describe("Property-Based Tests", () => {
               // Status bar should exist and be shown
               expect(statusBar).toBeDefined();
               expect(statusBar?.show).toHaveBeenCalled();
-              expect(statusBar?.text).toBe("$(layers) MCP");
+              expect(statusBar?.text).toBe("$(layers) ACS");
             } else {
               // If no extensions, status bar might exist but should be hidden
               if (statusBar) {

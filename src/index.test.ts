@@ -336,7 +336,7 @@ describe("Shared Status Bar", () => {
       // Status bar should still be functional
       const statusBar = getStatusBarItem();
       expect(statusBar).toBeDefined();
-      expect(statusBar?.text).toBe("$(layers) MCP");
+      expect(statusBar?.text).toBe("$(layers) ACS");
     });
   });
 });

@@ -142,7 +142,7 @@ async function showMenuCommand(): Promise<void> {
 
 function formatDiagnosticOutput(info: DiagnosticInfo): string {
   const lines = [
-    "=== MCP ACS Shared Status Bar Diagnostics ===",
+    "=== ACS Shared Status Bar Diagnostics ===",
     "",
     `Active Extension Count: ${info.activeExtensionCount}`,
     `Status Bar Exists: ${info.statusBarExists}`,
@@ -189,7 +189,7 @@ async function showDiagnostics(): Promise<void> {
 
     // Show information message to user
     vscode.window.showInformationMessage(
-      `MCP ACS Diagnostics: ${diagnosticInfo.activeExtensionCount} extension(s) active. Check output channel for details.`
+      `ACS Diagnostics: ${diagnosticInfo.activeExtensionCount} extension(s) active. Check output channel for details.`
     );
 
     log("Diagnostics displayed successfully");
@@ -242,8 +242,8 @@ function updateStatusBar(): void {
     }
   }
 
-  statusBarItem.text = "$(layers) MCP";
-  statusBarItem.tooltip = `MCP ACS Extensions (${activeExtensions.size} active)`;
+  statusBarItem.text = "$(layers) ACS";
+  statusBarItem.tooltip = `ACS Extensions (${activeExtensions.size} active)`;
   log(`Showing status bar with ${activeExtensions.size} active extension(s)`);
   try {
     statusBarItem.show();
