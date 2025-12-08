@@ -9,6 +9,7 @@ export const window = {
   })),
   showQuickPick: jest.fn(() => Promise.resolve(undefined)),
   showErrorMessage: jest.fn(() => Promise.resolve(undefined)),
+  showInformationMessage: jest.fn(() => Promise.resolve(undefined)),
 };
 
 export const commands = {
@@ -21,3 +22,17 @@ export const StatusBarAlignment = {
   Right: 2,
   Left: 1,
 };
+
+export interface OutputChannel {
+  appendLine: jest.Mock;
+  dispose: jest.Mock;
+  show: jest.Mock;
+}
+
+export function createMockOutputChannel(): OutputChannel {
+  return {
+    appendLine: jest.fn(),
+    dispose: jest.fn(),
+    show: jest.fn(),
+  };
+}
