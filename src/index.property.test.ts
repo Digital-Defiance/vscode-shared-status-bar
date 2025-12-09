@@ -9,13 +9,14 @@ import {
   getStatusBarItem,
   setOutputChannel,
   getDiagnosticInfo,
+  resetStateForTesting,
 } from "./index";
 import { createMockOutputChannel } from "./__mocks__/vscode";
 
 describe("Property-Based Tests", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    dispose();
+    resetStateForTesting();
   });
 
   afterEach(() => {
@@ -30,9 +31,9 @@ describe("Property-Based Tests", () => {
    * one extension is active, exactly one status bar item SHALL exist, and when zero
    * extensions are active, zero status bar items SHALL exist.
    */
-  it("Property 1: Status bar item singleton invariant", () => {
-    fc.assert(
-      fc.property(
+  it("Property 1: Status bar item singleton invariant", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(
           fc.record({
             action: fc.constantFrom("register", "unregister"),
@@ -40,7 +41,7 @@ describe("Property-Based Tests", () => {
           }),
           { minLength: 1, maxLength: 50 }
         ),
-        (operations) => {
+        async (operations) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -48,9 +49,9 @@ describe("Property-Based Tests", () => {
           // Execute all operations
           for (const op of operations) {
             if (op.action === "register") {
-              registerExtension(op.extensionId);
+              await registerExtension(op.extensionId);
             } else {
-              unregisterExtension(op.extensionId);
+              await unregisterExtension(op.extensionId);
             }
 
             // After each operation, verify the singleton invariant
@@ -90,14 +91,14 @@ describe("Property-Based Tests", () => {
    * For any sequence of extension registrations, the VSCode API method createStatusBarItem
    * SHALL be invoked at most once between dispose calls.
    */
-  it("Property 2: Status bar creation is called at most once per lifecycle", () => {
-    fc.assert(
-      fc.property(
+  it("Property 2: Status bar creation is called at most once per lifecycle", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 20,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -106,7 +107,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions one by one
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Verify createStatusBarItem was called at most once
@@ -122,7 +123,7 @@ describe("Property-Based Tests", () => {
 
           // Register more extensions to verify no additional calls
           for (let i = 0; i < 5; i++) {
-            registerExtension(`additional-ext-${i}`);
+            await registerExtension(`additional-ext-${i}`);
           }
 
           // Still should be at most one call
@@ -144,14 +145,14 @@ describe("Property-Based Tests", () => {
    * For any sequence of registration operations, the command should be registered
    * if and only if at least one extension is active
    */
-  it("Property 3: Command registration lifecycle", () => {
-    fc.assert(
-      fc.property(
+  it("Property 3: Command registration lifecycle", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -161,7 +162,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions
           for (const id of extensionIds) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Command should be registered when at least one extension is active
@@ -175,7 +176,7 @@ describe("Property-Based Tests", () => {
 
           // Unregister all extensions
           for (const id of extensionIds) {
-            unregisterExtension(id);
+            await unregisterExtension(id);
           }
 
           // Command should be disposed when no extensions are active
@@ -211,7 +212,7 @@ describe("Property-Based Tests", () => {
 
           // Register extensions
           for (const id of extensionIds) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Get the command handler that was registered
@@ -290,15 +291,15 @@ describe("Property-Based Tests", () => {
    * For any initial state with N active extensions, calling registerExtension
    * with a new extension ID should result in N+1 active extensions
    */
-  it("Property 1: Registration increases count", () => {
-    fc.assert(
-      fc.property(
+  it("Property 1: Registration increases count", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
         }),
         fc.string({ minLength: 1, maxLength: 20 }),
-        (initialExtensions: string[], newExtension: string) => {
+        async (initialExtensions: string[], newExtension: string) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -306,7 +307,7 @@ describe("Property-Based Tests", () => {
           // Register initial extensions
           const uniqueInitial = Array.from(new Set(initialExtensions));
           for (const id of uniqueInitial) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           const initialCount = getActiveExtensionCount();
@@ -314,7 +315,7 @@ describe("Property-Based Tests", () => {
           // Register a new extension that's not in the initial set
           // If newExtension is already in the set, this tests idempotency
           const isNewExtension = !uniqueInitial.includes(newExtension);
-          registerExtension(newExtension);
+          await registerExtension(newExtension);
 
           const finalCount = getActiveExtensionCount();
 
@@ -341,19 +342,19 @@ describe("Property-Based Tests", () => {
    * For any extension ID, calling registerExtension multiple times should have
    * the same effect as calling it once
    */
-  it("Property 5: Idempotent registration", () => {
-    fc.assert(
-      fc.property(
+  it("Property 5: Idempotent registration", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
         fc.integer({ min: 1, max: 10 }),
-        (extensionId: string, numRegistrations: number) => {
+        async (extensionId: string, numRegistrations: number) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
 
           // Register the same extension multiple times
           for (let i = 0; i < numRegistrations; i++) {
-            registerExtension(extensionId);
+            await registerExtension(extensionId);
           }
 
           // Count should be 1 regardless of how many times we registered
@@ -362,8 +363,11 @@ describe("Property-Based Tests", () => {
           // Status bar should have been created
           expect(vscode.window.createStatusBarItem).toHaveBeenCalled();
 
-          // Command should have been registered exactly once
-          expect(vscode.commands.registerCommand).toHaveBeenCalledTimes(1);
+          // Command should have been registered exactly once (or 3 times with the new architecture)
+          // 1. mcp-acs.registerExtension
+          // 2. mcp-acs.unregisterExtension
+          // 3. mcp-acs.showMenu
+          expect(vscode.commands.registerCommand).toHaveBeenCalledTimes(3);
 
           // Cleanup
           dispose();
@@ -395,7 +399,7 @@ describe("Property-Based Tests", () => {
           // Register all extensions
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Get the command handler that was registered
@@ -455,14 +459,14 @@ describe("Property-Based Tests", () => {
    * For any state with N > 0 active extensions, calling unregisterExtension
    * with an existing extension ID should result in N-1 active extensions
    */
-  it("Property 2: Unregistration decreases count", () => {
-    fc.assert(
-      fc.property(
+  it("Property 2: Unregistration decreases count", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -470,7 +474,7 @@ describe("Property-Based Tests", () => {
           // Register all extensions (unique set)
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           const initialCount = getActiveExtensionCount();
@@ -479,7 +483,7 @@ describe("Property-Based Tests", () => {
           // Pick a random extension to unregister
           if (uniqueExtensions.length > 0) {
             const extensionToRemove = uniqueExtensions[0];
-            unregisterExtension(extensionToRemove);
+            await unregisterExtension(extensionToRemove);
 
             const finalCount = getActiveExtensionCount();
 
@@ -487,7 +491,7 @@ describe("Property-Based Tests", () => {
             expect(finalCount).toBe(initialCount - 1);
 
             // Unregistering the same extension again should not change count
-            unregisterExtension(extensionToRemove);
+            await unregisterExtension(extensionToRemove);
             expect(getActiveExtensionCount()).toBe(finalCount);
           }
 
@@ -506,14 +510,14 @@ describe("Property-Based Tests", () => {
    * For any state, calling dispose() should result in zero active extensions,
    * no status bar item, and no registered command
    */
-  it("Property 6: Dispose cleanup", () => {
-    fc.assert(
-      fc.property(
+  it("Property 6: Dispose cleanup", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -521,7 +525,7 @@ describe("Property-Based Tests", () => {
           // Register extensions to create some state
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Verify state was created (if there were extensions)
@@ -569,14 +573,14 @@ describe("Property-Based Tests", () => {
    * For any state, the status bar item should be visible if and only if
    * at least one extension is active
    */
-  it("Property 4: Status bar visibility", () => {
-    fc.assert(
-      fc.property(
+  it("Property 4: Status bar visibility", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -584,7 +588,7 @@ describe("Property-Based Tests", () => {
           // Register extensions
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           const statusBar = getStatusBarItem();
@@ -606,7 +610,7 @@ describe("Property-Based Tests", () => {
 
           // Now unregister all extensions one by one
           for (const id of uniqueExtensions) {
-            unregisterExtension(id);
+            await unregisterExtension(id);
           }
 
           // After unregistering all, status bar should be hidden
@@ -632,11 +636,11 @@ describe("Property-Based Tests", () => {
    * For any extension ID, calling registerExtension should result in a log entry
    * containing that extension ID
    */
-  it("Property 4: Registration logging is complete", () => {
-    fc.assert(
-      fc.property(
+  it("Property 4: Registration logging is complete", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
-        (extensionId: string) => {
+        async (extensionId: string) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -652,7 +656,7 @@ describe("Property-Based Tests", () => {
           const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
 
           // Register the extension
-          registerExtension(extensionId);
+          await registerExtension(extensionId);
 
           // Verify that a log entry was created
           // Check both output channel and console.log
@@ -700,14 +704,14 @@ describe("Property-Based Tests", () => {
    * For any sequence of operations that change visibility, each change should
    * produce a corresponding log entry
    */
-  it("Property 5: Visibility changes are logged", () => {
-    fc.assert(
-      fc.property(
+  it("Property 5: Visibility changes are logged", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 5,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -726,7 +730,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions (should cause visibility change to shown)
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Clear logs before unregistering
@@ -747,7 +751,7 @@ describe("Property-Based Tests", () => {
 
           // Unregister all extensions (should cause visibility change to hidden)
           for (const id of uniqueExtensions) {
-            unregisterExtension(id);
+            await unregisterExtension(id);
           }
 
           const logsAfterUnregister = [
@@ -776,14 +780,14 @@ describe("Property-Based Tests", () => {
    *
    * For any sequence of registrations, only one status bar item should ever be created
    */
-  it("Property 7: Status bar item is singleton", () => {
-    fc.assert(
-      fc.property(
+  it("Property 7: Status bar item is singleton", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 20,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -792,7 +796,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions one by one
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Verify createStatusBarItem was called exactly once
@@ -810,7 +814,7 @@ describe("Property-Based Tests", () => {
 
           // Register more extensions
           for (let i = 0; i < 5; i++) {
-            registerExtension(`additional-extension-${i}`);
+            await registerExtension(`additional-extension-${i}`);
           }
 
           // Verify createStatusBarItem was still only called once
@@ -822,16 +826,16 @@ describe("Property-Based Tests", () => {
 
           // Unregister all extensions
           for (const id of uniqueExtensions) {
-            unregisterExtension(id);
+            await unregisterExtension(id);
           }
           for (let i = 0; i < 5; i++) {
-            unregisterExtension(`additional-extension-${i}`);
+            await unregisterExtension(`additional-extension-${i}`);
           }
 
           // Register new extensions again
           jest.clearAllMocks();
           for (let i = 0; i < 3; i++) {
-            registerExtension(`new-extension-${i}`);
+            await registerExtension(`new-extension-${i}`);
           }
 
           // After clearing and re-registering, status bar should be reused
@@ -853,9 +857,9 @@ describe("Property-Based Tests", () => {
    * For any sequence of extension registrations and unregistrations, the status bar
    * should be visible if and only if at least one extension is registered
    */
-  it("Property 1: Status bar visibility matches registration state", () => {
-    fc.assert(
-      fc.property(
+  it("Property 1: Status bar visibility matches registration state", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(
           fc.record({
             action: fc.constantFrom("register", "unregister"),
@@ -863,7 +867,7 @@ describe("Property-Based Tests", () => {
           }),
           { minLength: 1, maxLength: 20 }
         ),
-        (operations) => {
+        async (operations) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -874,7 +878,7 @@ describe("Property-Based Tests", () => {
           // Execute operations and verify visibility after each
           for (const op of operations) {
             if (op.action === "register") {
-              registerExtension(op.extensionId);
+              await registerExtension(op.extensionId);
               registeredExtensions.add(op.extensionId);
             } else {
               unregisterExtension(op.extensionId);
@@ -916,23 +920,23 @@ describe("Property-Based Tests", () => {
    * For any number of registered extensions, the tooltip should display the exact
    * count of active extensions
    */
-  it("Property 2: Tooltip reflects accurate count", () => {
-    fc.assert(
-      fc.property(
+  it("Property 2: Tooltip reflects accurate count", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 15,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
-          dispose();
+          resetStateForTesting();
           jest.clearAllMocks();
 
           const uniqueExtensions = Array.from(new Set(extensionIds));
 
           // Register extensions one by one and verify tooltip after each
           for (let i = 0; i < uniqueExtensions.length; i++) {
-            registerExtension(uniqueExtensions[i]);
+            await registerExtension(uniqueExtensions[i]);
 
             const statusBar = getStatusBarItem();
             const activeCount = getActiveExtensionCount();
@@ -947,7 +951,7 @@ describe("Property-Based Tests", () => {
 
           // Now unregister extensions one by one and verify tooltip updates
           for (let i = uniqueExtensions.length - 1; i >= 0; i--) {
-            unregisterExtension(uniqueExtensions[i]);
+            await unregisterExtension(uniqueExtensions[i]);
 
             const statusBar = getStatusBarItem();
             const activeCount = getActiveExtensionCount();
@@ -1059,11 +1063,11 @@ describe("Property-Based Tests", () => {
    * For any state transition from zero to one registered extensions, a log entry
    * containing "Creating status bar item" and a timestamp SHALL be produced.
    */
-  it("Property 9: Creation logging", () => {
-    fc.assert(
-      fc.property(
+  it("Property 9: Creation logging", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
-        (extensionId: string) => {
+        async (extensionId: string) => {
           // Start with clean state (zero extensions)
           dispose();
           jest.clearAllMocks();
@@ -1079,7 +1083,7 @@ describe("Property-Based Tests", () => {
           const consoleLogSpy = jest.spyOn(console, "log").mockImplementation();
 
           // Register the first extension (transition from 0 to 1)
-          registerExtension(extensionId);
+          await registerExtension(extensionId);
 
           // Verify that a log entry was created for status bar creation
           const outputChannelCalls = mockChannel.appendLine.mock.calls;
@@ -1143,14 +1147,14 @@ describe("Property-Based Tests", () => {
    * For any registration when a status bar item already exists, a log entry
    * indicating reuse SHALL be produced.
    */
-  it("Property 10: Reuse logging", () => {
-    fc.assert(
-      fc.property(
+  it("Property 10: Reuse logging", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 2,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1166,7 +1170,7 @@ describe("Property-Based Tests", () => {
           }
 
           // Register the first extension (creates status bar)
-          registerExtension(uniqueExtensions[0]);
+          await registerExtension(uniqueExtensions[0]);
 
           // Clear mocks to focus on subsequent registrations
           mockChannel.appendLine.mockClear();
@@ -1174,7 +1178,7 @@ describe("Property-Based Tests", () => {
 
           // Register additional extensions (should reuse status bar)
           for (let i = 1; i < uniqueExtensions.length; i++) {
-            registerExtension(uniqueExtensions[i]);
+            await registerExtension(uniqueExtensions[i]);
           }
 
           // Verify that reuse log entries were created
@@ -1218,14 +1222,14 @@ describe("Property-Based Tests", () => {
    * For any call to dispose(), a log entry containing "disposing" or "disposed"
    * SHALL be produced.
    */
-  it("Property 11: Disposal logging", () => {
-    fc.assert(
-      fc.property(
+  it("Property 11: Disposal logging", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1237,7 +1241,7 @@ describe("Property-Based Tests", () => {
           // Register extensions to create some state
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Clear mocks to focus on disposal logs
@@ -1304,14 +1308,14 @@ describe("Property-Based Tests", () => {
    * For any extension ID and any positive integer N, calling registerExtension(id)
    * N times SHALL result in the same state as calling it once.
    */
-  it("Property 3: Registration idempotency", () => {
-    fc.assert(
-      fc.property(
+  it("Property 3: Registration idempotency", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
         fc.integer({ min: 1, max: 20 }),
-        (extensionId: string, numRegistrations: number) => {
+        async (extensionId: string, numRegistrations: number) => {
           // Start with clean state
-          dispose();
+          resetStateForTesting();
           jest.clearAllMocks();
 
           // Create a mock output channel to capture logs
@@ -1326,7 +1330,7 @@ describe("Property-Based Tests", () => {
 
           // Register the same extension multiple times
           for (let i = 0; i < numRegistrations; i++) {
-            registerExtension(extensionId);
+            await registerExtension(extensionId);
           }
 
           // Verify the extension count is exactly 1 (idempotent behavior)
@@ -1388,11 +1392,11 @@ describe("Property-Based Tests", () => {
           }
 
           // Verify that unregistering once removes the extension completely
-          unregisterExtension(extensionId);
+          await unregisterExtension(extensionId);
           expect(getActiveExtensionCount()).toBe(0);
 
           // Verify that attempting to unregister again is safe (no error)
-          expect(() => unregisterExtension(extensionId)).not.toThrow();
+          await expect(unregisterExtension(extensionId)).resolves.not.toThrow();
           expect(getActiveExtensionCount()).toBe(0);
 
           // Cleanup
@@ -1411,9 +1415,9 @@ describe("Property-Based Tests", () => {
    * For any extension ID that is not currently registered, calling unregisterExtension(id)
    * SHALL not throw an error and SHALL not modify the active extension count.
    */
-  it("Property 4: Unregistration safety", () => {
-    fc.assert(
-      fc.property(
+  it("Property 4: Unregistration safety", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
@@ -1422,7 +1426,10 @@ describe("Property-Based Tests", () => {
           minLength: 1,
           maxLength: 10,
         }),
-        (registeredExtensions: string[], unregisteredExtensions: string[]) => {
+        async (
+          registeredExtensions: string[],
+          unregisteredExtensions: string[]
+        ) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1434,7 +1441,7 @@ describe("Property-Based Tests", () => {
           // Register a set of extensions
           const uniqueRegistered = Array.from(new Set(registeredExtensions));
           for (const id of uniqueRegistered) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           const initialCount = getActiveExtensionCount();
@@ -1457,7 +1464,7 @@ describe("Property-Based Tests", () => {
 
           for (const id of uniqueUnregistered) {
             // Should not throw an error
-            expect(() => unregisterExtension(id)).not.toThrow();
+            await expect(unregisterExtension(id)).resolves.not.toThrow();
 
             // Count should remain unchanged
             expect(getActiveExtensionCount()).toBe(initialCount);
@@ -1526,11 +1533,11 @@ describe("Property-Based Tests", () => {
    * For any extension ID, the sequence registerExtension(id) → unregisterExtension(id) →
    * registerExtension(id) SHALL result in the extension being registered.
    */
-  it("Property 5: Re-registration support", () => {
-    fc.assert(
-      fc.property(
+  it("Property 5: Re-registration support", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.string({ minLength: 1, maxLength: 20 }),
-        (extensionId: string) => {
+        async (extensionId: string) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1540,7 +1547,7 @@ describe("Property-Based Tests", () => {
           setOutputChannel(mockChannel as any);
 
           // Step 1: Register the extension
-          registerExtension(extensionId);
+          await registerExtension(extensionId);
 
           // Verify extension is registered
           expect(getActiveExtensionCount()).toBe(1);
@@ -1554,7 +1561,7 @@ describe("Property-Based Tests", () => {
           expect(statusBarAfterFirstReg).toBeDefined();
 
           // Step 2: Unregister the extension
-          unregisterExtension(extensionId);
+          await unregisterExtension(extensionId);
 
           // Verify extension is unregistered
           expect(getActiveExtensionCount()).toBe(0);
@@ -1571,7 +1578,7 @@ describe("Property-Based Tests", () => {
 
           // Step 3: Re-register the extension
           jest.clearAllMocks(); // Clear mocks to verify re-registration behavior
-          registerExtension(extensionId);
+          await registerExtension(extensionId);
 
           // Verify extension is registered again
           expect(getActiveExtensionCount()).toBe(1);
@@ -1615,14 +1622,14 @@ describe("Property-Based Tests", () => {
    * For any non-negative integer N representing the number of registered extensions,
    * when N > 0, the status bar tooltip SHALL equal "ACS Extensions (N active)".
    */
-  it("Property 6: Tooltip accuracy", () => {
-    fc.assert(
-      fc.property(
+  it("Property 6: Tooltip accuracy", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 20,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1632,7 +1639,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Get the status bar item
@@ -1647,7 +1654,7 @@ describe("Property-Based Tests", () => {
 
           // Test tooltip updates when extensions are unregistered
           for (let i = uniqueExtensions.length - 1; i >= 1; i--) {
-            unregisterExtension(uniqueExtensions[i]);
+            await unregisterExtension(uniqueExtensions[i]);
 
             const currentStatusBar = getStatusBarItem();
             const currentCount = getActiveExtensionCount();
@@ -1660,7 +1667,7 @@ describe("Property-Based Tests", () => {
           }
 
           // Unregister the last extension
-          unregisterExtension(uniqueExtensions[0]);
+          await unregisterExtension(uniqueExtensions[0]);
 
           // When N = 0, status bar should be hidden (but may still exist)
           expect(getActiveExtensionCount()).toBe(0);
@@ -1684,14 +1691,14 @@ describe("Property-Based Tests", () => {
    * For any system state, the diagnostic info should accurately reflect the number
    * of registered extensions, status bar existence, and visibility
    */
-  it("Property 8: Diagnostic reports match actual state", () => {
-    fc.assert(
-      fc.property(
+  it("Property 8: Diagnostic reports match actual state", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 0,
           maxLength: 10,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1700,7 +1707,7 @@ describe("Property-Based Tests", () => {
 
           // Register all extensions
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Get diagnostic info
@@ -1753,7 +1760,7 @@ describe("Property-Based Tests", () => {
           // Now unregister half of the extensions and verify again
           const halfPoint = Math.floor(uniqueExtensions.length / 2);
           for (let i = 0; i < halfPoint; i++) {
-            unregisterExtension(uniqueExtensions[i]);
+            await unregisterExtension(uniqueExtensions[i]);
           }
 
           const diagnosticInfoAfterUnregister = getDiagnosticInfo();
@@ -1791,14 +1798,14 @@ describe("Property-Based Tests", () => {
    * one extension is registered. This property tests visibility transitions:
    * 0→1, 1→0, N→N+1, N→N-1.
    */
-  it("Property 8: Visibility state correctness", () => {
-    fc.assert(
-      fc.property(
+  it("Property 8: Visibility state correctness", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(fc.string({ minLength: 1, maxLength: 20 }), {
           minLength: 1,
           maxLength: 15,
         }),
-        (extensionIds: string[]) => {
+        async (extensionIds: string[]) => {
           // Start with clean state (0 extensions)
           dispose();
           jest.clearAllMocks();
@@ -1813,7 +1820,7 @@ describe("Property-Based Tests", () => {
 
           // Test transition 0→1: Register first extension
           if (uniqueExtensions.length > 0) {
-            registerExtension(uniqueExtensions[0]);
+            await registerExtension(uniqueExtensions[0]);
 
             statusBar = getStatusBarItem();
             expect(statusBar).toBeDefined();
@@ -1831,7 +1838,7 @@ describe("Property-Based Tests", () => {
             const previousCount = getActiveExtensionCount();
             jest.clearAllMocks(); // Clear to track new calls
 
-            registerExtension(uniqueExtensions[i]);
+            await registerExtension(uniqueExtensions[i]);
 
             statusBar = getStatusBarItem();
             const currentCount = getActiveExtensionCount();
@@ -1852,7 +1859,7 @@ describe("Property-Based Tests", () => {
             const previousCount = getActiveExtensionCount();
             jest.clearAllMocks(); // Clear to track new calls
 
-            unregisterExtension(uniqueExtensions[i]);
+            await unregisterExtension(uniqueExtensions[i]);
 
             statusBar = getStatusBarItem();
             const currentCount = getActiveExtensionCount();
@@ -1870,7 +1877,7 @@ describe("Property-Based Tests", () => {
 
           // Test transition 1→0: Unregister last extension
           jest.clearAllMocks(); // Clear to track new calls
-          unregisterExtension(uniqueExtensions[0]);
+          await unregisterExtension(uniqueExtensions[0]);
 
           statusBar = getStatusBarItem();
           const finalCount = getActiveExtensionCount();
@@ -1887,7 +1894,7 @@ describe("Property-Based Tests", () => {
 
           // Test re-registration after complete unregistration (0→1 again)
           jest.clearAllMocks();
-          registerExtension("re-registered-extension");
+          await registerExtension("re-registered-extension");
 
           statusBar = getStatusBarItem();
           expect(statusBar).toBeDefined();
@@ -1910,9 +1917,9 @@ describe("Property-Based Tests", () => {
    * accurately reflects the current number of registered extensions, status bar existence,
    * and command registration state.
    */
-  it("Property 12: Diagnostic accuracy", () => {
-    fc.assert(
-      fc.property(
+  it("Property 12: Diagnostic accuracy", async () => {
+    await fc.assert(
+      fc.asyncProperty(
         fc.array(
           fc.record({
             action: fc.constantFrom("register", "unregister"),
@@ -1920,7 +1927,7 @@ describe("Property-Based Tests", () => {
           }),
           { minLength: 1, maxLength: 30 }
         ),
-        (operations) => {
+        async (operations) => {
           // Start with clean state
           dispose();
           jest.clearAllMocks();
@@ -1931,10 +1938,10 @@ describe("Property-Based Tests", () => {
           // Execute operations and verify diagnostic info after each
           for (const op of operations) {
             if (op.action === "register") {
-              registerExtension(op.extensionId);
+              await registerExtension(op.extensionId);
               expectedRegisteredExtensions.add(op.extensionId);
             } else {
-              unregisterExtension(op.extensionId);
+              await unregisterExtension(op.extensionId);
               expectedRegisteredExtensions.delete(op.extensionId);
             }
 
@@ -2028,7 +2035,7 @@ describe("Property-Based Tests", () => {
           // Register all extensions
           const uniqueExtensions = Array.from(new Set(extensionIds));
           for (const id of uniqueExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           // Get the command handler that was registered
@@ -2059,10 +2066,10 @@ describe("Property-Based Tests", () => {
 
           // Filter out separator and diagnostics
           const extensionItems = items.filter(
-              (item) =>
-                item.label !== "Show Diagnostics" &&
-                item.kind !== vscode.QuickPickItemKind.Separator
-            );
+            (item) =>
+              item.label !== "Show Diagnostics" &&
+              item.kind !== vscode.QuickPickItemKind.Separator
+          );
 
           // Property: Menu shows ALL registered extensions
           expect(extensionItems).toHaveLength(uniqueExtensions.length);
@@ -2086,7 +2093,7 @@ describe("Property-Based Tests", () => {
           const remainingExtensions = uniqueExtensions.slice(halfPoint);
 
           for (let i = 0; i < halfPoint; i++) {
-            unregisterExtension(uniqueExtensions[i]);
+            await unregisterExtension(uniqueExtensions[i]);
           }
 
           // Verify menu updates when extensions unregister
@@ -2131,7 +2138,7 @@ describe("Property-Based Tests", () => {
           // Register new extensions to test menu updates on registration
           const newExtensions = ["new-ext-1", "new-ext-2"];
           for (const id of newExtensions) {
-            registerExtension(id);
+            await registerExtension(id);
           }
 
           const allExtensions = [...remainingExtensions, ...newExtensions];

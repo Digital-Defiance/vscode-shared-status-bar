@@ -5,15 +5,18 @@ import {
   dispose,
   getStatusBarItem,
   getActiveExtensionCount,
+  resetStateForTesting,
 } from "./index";
 
 describe("Shared Status Bar", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetStateForTesting();
   });
 
   afterEach(() => {
     dispose();
+    resetStateForTesting();
   });
 
   it("creates status bar on first registration", async () => {
@@ -212,7 +215,10 @@ describe("Shared Status Bar", () => {
       const registerCommandCalls = (
         vscode.commands.registerCommand as jest.Mock
       ).mock.calls;
-      const showMenuCallback = registerCommandCalls[0][1];
+      const showMenuCall = registerCommandCalls.find(
+        (call) => call[0] === "mcp-acs.showMenu"
+      );
+      const showMenuCallback = showMenuCall[1];
 
       // Should not throw when command is invoked
       await expect(showMenuCallback()).resolves.not.toThrow();
@@ -248,7 +254,9 @@ describe("Shared Status Bar", () => {
 
       // Error should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to dispose mcp-acs.showMenu command:",
+        expect.stringMatching(
+          /Failed to dispose mcp-acs\.(showMenu|registerExtension) command:/
+        ),
         expect.any(Error)
       );
 
@@ -303,7 +311,7 @@ describe("Shared Status Bar", () => {
 
       // Both errors should be logged
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to dispose command:",
+        expect.stringMatching(/Failed to dispose .* command:/),
         expect.any(Error)
       );
       expect(consoleErrorSpy).toHaveBeenCalledWith(
@@ -352,30 +360,32 @@ describe("Shared Status Bar", () => {
         return { dispose: jest.fn() };
       });
 
-      // Create mock output channel (this triggers diagnostic command registration)
-      const mockChannel = {
-        appendLine: jest.fn(),
-        dispose: jest.fn(),
-        show: jest.fn(),
-      };
+      try {
+        // Create mock output channel (this triggers diagnostic command registration)
+        const mockChannel = {
+          appendLine: jest.fn(),
+          dispose: jest.fn(),
+          show: jest.fn(),
+        };
 
-      // Should not throw when setting output channel
-      expect(() => {
-        (require("./index") as any).setOutputChannel(mockChannel);
-      }).not.toThrow();
+        // Extension should still be able to register normally
+        await registerExtension("test-ext");
+        expect(getActiveExtensionCount()).toBe(1);
 
-      // Error should be logged
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        "Failed to register mcp-acs.diagnostics command:",
-        expect.any(Error)
-      );
+        // Should not throw when setting output channel
+        expect(() => {
+          (require("./index") as any).setOutputChannel(mockChannel);
+        }).not.toThrow();
 
-      // Extension should still be able to register normally
-      await registerExtension("test-ext");
-      expect(getActiveExtensionCount()).toBe(1);
-
-      // Restore original mock
-      vscode.commands.registerCommand = originalRegisterCommand;
+        // Error should be logged
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          "Failed to register mcp-acs.diagnostics command:",
+          expect.any(Error)
+        );
+      } finally {
+        // Restore original mock
+        vscode.commands.registerCommand = originalRegisterCommand;
+      }
     });
 
     it("handles status bar show() failure gracefully", async () => {

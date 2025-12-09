@@ -16,6 +16,7 @@ export const commands = {
   registerCommand: jest.fn((command: string, callback: () => void) => ({
     dispose: jest.fn(),
   })),
+  executeCommand: jest.fn(() => Promise.reject(new Error("Command not found"))),
 };
 
 export const StatusBarAlignment = {

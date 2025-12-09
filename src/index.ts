@@ -281,6 +281,8 @@ export async function registerExtension(
         return;
       } catch (e) {
         logError("Failed to register with new owner after losing race:", e);
+        // Fallback: Register locally anyway so at least WE work
+        internalRegister(extensionId, metadata);
       }
     }
   } else {
@@ -725,6 +727,28 @@ export function dispose(): void {
     logError("Failed to dispose command:", error);
   }
 
+  // Dispose register extension command
+  try {
+    if (registerCommandDisposable) {
+      registerCommandDisposable.dispose();
+      log("Command disposed: mcp-acs.registerExtension");
+    }
+    registerCommandDisposable = undefined;
+  } catch (error) {
+    logError("Failed to dispose register command:", error);
+  }
+
+  // Dispose unregister extension command
+  try {
+    if (unregisterCommandDisposable) {
+      unregisterCommandDisposable.dispose();
+      log("Command disposed: mcp-acs.unregisterExtension");
+    }
+    unregisterCommandDisposable = undefined;
+  } catch (error) {
+    logError("Failed to dispose unregister command:", error);
+  }
+
   // Dispose diagnostic command
   try {
     if (diagnosticCommandDisposable) {
@@ -847,4 +871,56 @@ export function getDiagnosticInfo(): DiagnosticInfo {
     registerCommandRegistered: registerCommandDisposable !== undefined,
     lastError: lastError,
   };
+}
+
+/**
+ * Resets the internal state of the module.
+ * This is primarily used for testing to ensure a clean state between tests.
+ *
+ * @internal
+ */
+export function resetStateForTesting(): void {
+  activeExtensions.clear();
+  if (statusBarItem) {
+    try {
+      statusBarItem.dispose();
+    } catch (e) {
+      // Ignore errors during reset
+    }
+    statusBarItem = undefined;
+  }
+  if (commandDisposable) {
+    try {
+      commandDisposable.dispose();
+    } catch (e) {
+      // Ignore errors during reset
+    }
+    commandDisposable = undefined;
+  }
+  if (registerCommandDisposable) {
+    try {
+      registerCommandDisposable.dispose();
+    } catch (e) {
+      // Ignore errors during reset
+    }
+    registerCommandDisposable = undefined;
+  }
+  if (unregisterCommandDisposable) {
+    try {
+      unregisterCommandDisposable.dispose();
+    } catch (e) {
+      // Ignore errors during reset
+    }
+    unregisterCommandDisposable = undefined;
+  }
+  if (diagnosticCommandDisposable) {
+    try {
+      diagnosticCommandDisposable.dispose();
+    } catch (e) {
+      // Ignore errors during reset
+    }
+    diagnosticCommandDisposable = undefined;
+  }
+  outputChannel = undefined;
+  lastError = null;
 }
