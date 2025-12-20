@@ -242,6 +242,7 @@ If the status bar item is not appearing in VS Code, follow these steps:
    - The status bar API requires VS Code 1.50.0 or later
 
 5. **Inspect Status Bar Item**
+
    ```typescript
    const statusBar = getStatusBarItem();
    if (statusBar) {
@@ -380,7 +381,7 @@ import {
 
 export function activate(context: vscode.ExtensionContext) {
   // Set up logging
-  const outputChannel = vscode.window.createOutputChannel("MCP Debugger");
+  const outputChannel = vscode.window.createOutputChannel("MCP ACS Debugger");
   setOutputChannel(outputChannel);
   context.subscriptions.push(outputChannel);
 
