@@ -214,19 +214,28 @@ export async function registerExtension(
   extensionId: string,
   metadata?: ExtensionMetadata
 ): Promise<void> {
-  // Try to register with an existing owner first
+  // Try to register with an existing owner first.
+  // We must check that the command exists before calling executeCommand because
+  // in VS Code remote environments (dev containers, SSH, WSL) executeCommand
+  // for an unregistered command can hang indefinitely while VS Code waits for
+  // an extension that might provide it to finish activating.
   try {
-    // Attempt to execute the registration command provided by the owner
-    // If this succeeds, another extension is already managing the status bar
-    await vscode.commands.executeCommand(
-      "mcp-acs.registerExtension",
-      extensionId,
-      metadata
-    );
-    log(`Registered ${extensionId} with existing status bar owner`);
-    return;
+    const allCommands = await vscode.commands.getCommands(true);
+    if (allCommands.includes("mcp-acs.registerExtension")) {
+      await vscode.commands.executeCommand(
+        "mcp-acs.registerExtension",
+        extensionId,
+        metadata
+      );
+      log(`Registered ${extensionId} with existing status bar owner`);
+      return;
+    } else {
+      log(
+        `No existing status bar owner found, attempting to become owner for ${extensionId}`
+      );
+    }
   } catch (error) {
-    // Command not found or failed - we will attempt to become the owner
+    // Command lookup or execution failed - we will attempt to become the owner
     log(
       `No existing status bar owner found (or command failed), attempting to become owner for ${extensionId}`
     );
@@ -272,13 +281,18 @@ export async function registerExtension(
       // If we failed to register, maybe someone else just did?
       // Try to register with them again?
       try {
-        await vscode.commands.executeCommand(
-          "mcp-acs.registerExtension",
-          extensionId,
-          metadata
-        );
-        log(`Registered ${extensionId} with new status bar owner`);
-        return;
+        const allCommands = await vscode.commands.getCommands(true);
+        if (allCommands.includes("mcp-acs.registerExtension")) {
+          await vscode.commands.executeCommand(
+            "mcp-acs.registerExtension",
+            extensionId,
+            metadata
+          );
+          log(`Registered ${extensionId} with new status bar owner`);
+          return;
+        }
+        // Command still doesn't exist — fall through to local registration
+        internalRegister(extensionId, metadata);
       } catch (e) {
         logError("Failed to register with new owner after losing race:", e);
         // Fallback: Register locally anyway so at least WE work
@@ -364,11 +378,17 @@ function internalRegister(
  */
 export async function unregisterExtension(extensionId: string): Promise<void> {
   try {
-    await vscode.commands.executeCommand(
-      "mcp-acs.unregisterExtension",
-      extensionId
-    );
-    log(`Unregistered ${extensionId} via owner`);
+    const allCommands = await vscode.commands.getCommands(true);
+    if (allCommands.includes("mcp-acs.unregisterExtension")) {
+      await vscode.commands.executeCommand(
+        "mcp-acs.unregisterExtension",
+        extensionId
+      );
+      log(`Unregistered ${extensionId} via owner`);
+      return;
+    }
+    // Command not registered — fall through to local unregister
+    internalUnregister(extensionId);
   } catch (error) {
     // If command fails (e.g. we are owner, or owner died), try local unregister
     internalUnregister(extensionId);
