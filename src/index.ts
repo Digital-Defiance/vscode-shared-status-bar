@@ -220,7 +220,12 @@ export async function registerExtension(
   // for an unregistered command can hang indefinitely while VS Code waits for
   // an extension that might provide it to finish activating.
   try {
-    const allCommands = await vscode.commands.getCommands(true);
+    // getCommands can also hang in remote environments — race with a timeout
+    const commandsPromise = vscode.commands.getCommands(true);
+    const timeoutPromise = new Promise<string[]>((_, reject) =>
+      setTimeout(() => reject(new Error('getCommands timeout')), 3000)
+    );
+    const allCommands = await Promise.race([commandsPromise, timeoutPromise]);
     if (allCommands.includes("mcp-acs.registerExtension")) {
       await vscode.commands.executeCommand(
         "mcp-acs.registerExtension",
@@ -281,7 +286,11 @@ export async function registerExtension(
       // If we failed to register, maybe someone else just did?
       // Try to register with them again?
       try {
-        const allCommands = await vscode.commands.getCommands(true);
+        const commandsPromise2 = vscode.commands.getCommands(true);
+        const timeoutPromise2 = new Promise<string[]>((_, reject) =>
+          setTimeout(() => reject(new Error('getCommands timeout')), 3000)
+        );
+        const allCommands = await Promise.race([commandsPromise2, timeoutPromise2]);
         if (allCommands.includes("mcp-acs.registerExtension")) {
           await vscode.commands.executeCommand(
             "mcp-acs.registerExtension",
@@ -378,7 +387,11 @@ function internalRegister(
  */
 export async function unregisterExtension(extensionId: string): Promise<void> {
   try {
-    const allCommands = await vscode.commands.getCommands(true);
+    const commandsPromise = vscode.commands.getCommands(true);
+    const timeoutPromise = new Promise<string[]>((_, reject) =>
+      setTimeout(() => reject(new Error('getCommands timeout')), 3000)
+    );
+    const allCommands = await Promise.race([commandsPromise, timeoutPromise]);
     if (allCommands.includes("mcp-acs.unregisterExtension")) {
       await vscode.commands.executeCommand(
         "mcp-acs.unregisterExtension",
