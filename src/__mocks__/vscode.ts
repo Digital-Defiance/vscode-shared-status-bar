@@ -17,6 +17,7 @@ export const commands = {
     dispose: jest.fn(),
   })),
   executeCommand: jest.fn(() => Promise.reject(new Error("Command not found"))),
+  getCommands: jest.fn(() => Promise.resolve([] as string[])),
 };
 
 export const StatusBarAlignment = {

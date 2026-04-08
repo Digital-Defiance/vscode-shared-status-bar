@@ -227,11 +227,17 @@ export async function registerExtension(
     );
     const allCommands = await Promise.race([commandsPromise, timeoutPromise]);
     if (allCommands.includes("mcp-acs.registerExtension")) {
-      await vscode.commands.executeCommand(
+      // Verify the owner is actually responsive before delegating.
+      // Race the executeCommand with a timeout to detect stale/hung owners.
+      const execPromise = vscode.commands.executeCommand(
         "mcp-acs.registerExtension",
         extensionId,
         metadata
       );
+      const execTimeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('registerExtension command timeout')), 3000)
+      );
+      await Promise.race([execPromise, execTimeout]);
       log(`Registered ${extensionId} with existing status bar owner`);
       return;
     } else {
@@ -240,9 +246,9 @@ export async function registerExtension(
       );
     }
   } catch (error) {
-    // Command lookup or execution failed - we will attempt to become the owner
+    // Command lookup or execution failed/timed out - we will attempt to become the owner
     log(
-      `No existing status bar owner found (or command failed), attempting to become owner for ${extensionId}`
+      `No existing status bar owner found (or command failed/timed out), attempting to become owner for ${extensionId}`
     );
   }
 
@@ -314,6 +320,40 @@ export async function registerExtension(
   }
 }
 
+/**
+ * Ensures the mcp-acs.showMenu command is registered and wired to the status bar.
+ *
+ * This function handles the case where a previous registration attempt failed
+ * (e.g., stale command from a crashed extension host) by detecting the failure
+ * and always assigning the command string to the status bar item. VS Code will
+ * route the click to whichever extension currently owns the command registration.
+ *
+ * @internal
+ */
+function ensureShowMenuCommand(): void {
+  if (!commandDisposable) {
+    try {
+      commandDisposable = vscode.commands.registerCommand(
+        "mcp-acs.showMenu",
+        showMenuCommand
+      );
+      log("Command registered: mcp-acs.showMenu");
+    } catch (error) {
+      // Command already registered by another module instance — this is expected
+      // when multiple extensions bundle their own copy of the shared status bar.
+      // We still set statusBarItem.command below so clicks route to the owner.
+      log(
+        `mcp-acs.showMenu already registered by another instance, will delegate clicks to existing owner`
+      );
+    }
+  }
+  // Always assign the command to the status bar item, even if we didn't register it.
+  // VS Code routes the click to whichever extension owns the command registration.
+  if (statusBarItem) {
+    statusBarItem.command = "mcp-acs.showMenu";
+  }
+}
+
 function internalRegister(
   extensionId: string,
   metadata?: ExtensionMetadata
@@ -345,19 +385,7 @@ function internalRegister(
 
   // Register command when first extension registers
   if (wasEmpty && activeExtensions.size > 0) {
-    try {
-      commandDisposable = vscode.commands.registerCommand(
-        "mcp-acs.showMenu",
-        showMenuCommand
-      );
-      log("Command registered: mcp-acs.showMenu");
-      // Add command to status bar if it already exists
-      if (statusBarItem) {
-        statusBarItem.command = "mcp-acs.showMenu";
-      }
-    } catch (error) {
-      logError("Failed to register mcp-acs.showMenu command:", error);
-    }
+    ensureShowMenuCommand();
   }
 
   // Only update status bar if count actually changed
@@ -393,17 +421,21 @@ export async function unregisterExtension(extensionId: string): Promise<void> {
     );
     const allCommands = await Promise.race([commandsPromise, timeoutPromise]);
     if (allCommands.includes("mcp-acs.unregisterExtension")) {
-      await vscode.commands.executeCommand(
+      const execPromise = vscode.commands.executeCommand(
         "mcp-acs.unregisterExtension",
         extensionId
       );
+      const execTimeout = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('unregisterExtension command timeout')), 3000)
+      );
+      await Promise.race([execPromise, execTimeout]);
       log(`Unregistered ${extensionId} via owner`);
       return;
     }
     // Command not registered — fall through to local unregister
     internalUnregister(extensionId);
   } catch (error) {
-    // If command fails (e.g. we are owner, or owner died), try local unregister
+    // If command fails/times out (e.g. we are owner, or owner died), try local unregister
     internalUnregister(extensionId);
   }
 }
@@ -472,6 +504,11 @@ async function showMenuCommand(): Promise<void> {
   try {
     log(`Showing menu with ${activeExtensions.size} extensions`);
 
+    if (activeExtensions.size === 0) {
+      vscode.window.showInformationMessage("No ACS extensions are currently active.");
+      return;
+    }
+
     const items: vscode.QuickPickItem[] = [];
 
     for (const [id, meta] of activeExtensions) {
@@ -495,10 +532,16 @@ async function showMenuCommand(): Promise<void> {
       description: "Troubleshooting info",
     });
 
-    const selected = await vscode.window.showQuickPick(items, {
-      placeHolder: "Active ACS Extensions",
-      canPickMany: false,
-    });
+    let selected: vscode.QuickPickItem | undefined;
+    try {
+      selected = await vscode.window.showQuickPick(items, {
+        placeHolder: "Active ACS Extensions",
+        canPickMany: false,
+      });
+    } catch (quickPickError) {
+      logError("Quick pick failed:", quickPickError);
+      return;
+    }
 
     if (selected) {
       if (selected.label === "Show Diagnostics") {
@@ -543,10 +586,22 @@ async function showMenuCommand(): Promise<void> {
                   a.command === selectedAction.detail &&
                   a.label === selectedAction.label
               );
-              await vscode.commands.executeCommand(
-                selectedAction.detail,
-                ...(action?.arguments || [])
-              );
+              try {
+                // Race command execution with a timeout to prevent hangs
+                const cmdPromise = vscode.commands.executeCommand(
+                  selectedAction.detail,
+                  ...(action?.arguments || [])
+                );
+                const cmdTimeout = new Promise<void>((_, reject) =>
+                  setTimeout(() => reject(new Error('Action command timeout')), 10000)
+                );
+                await Promise.race([cmdPromise, cmdTimeout]);
+              } catch (cmdError) {
+                logError(`Action command failed (${selectedAction.detail}):`, cmdError);
+                vscode.window.showWarningMessage(
+                  `Action failed: ${cmdError instanceof Error ? cmdError.message : String(cmdError)}`
+                );
+              }
             }
           }
         }
@@ -698,10 +753,9 @@ function updateStatusBar(): void {
       log(
         `Status bar item created successfully (ID: mcp-acs.shared-status, alignment: Right, priority: 100)`
       );
-      // Only set command if it's registered
-      if (commandDisposable) {
-        statusBarItem.command = "mcp-acs.showMenu";
-      }
+      // Always set the command — even if we didn't register it ourselves,
+      // VS Code will route the click to whichever extension owns the command.
+      statusBarItem.command = "mcp-acs.showMenu";
     } catch (error) {
       logError("Failed to create status bar item:", error);
       return;
